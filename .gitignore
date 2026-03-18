@@ -7,8 +7,10 @@ build
 coverage
 .vscode
 .idea
-operator_profile_integration.md
-API_EXAMPLES.md
 uploads
 test
 scripts
+
+# Deployment documentation (except README.md)
+*.md
+!README.md
