@@ -1,7 +1,11 @@
 {
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npm install"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -11,7 +15,9 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "multer": "^2.0.2",
-    "node-cron": "^3.0.2",
+    "node-cron": "^3.0.2"
+  },
+  "devDependencies": {
     "mongodb-memory-server": "^8.12.1"
   }
 }
