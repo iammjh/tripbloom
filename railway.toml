@@ -1,0 +1,6 @@
+[build]
+runtime = "node@20"
+
+[deploy]
+startCommand = "npm install && npm start --prefix backend"
+restartPolicyMaxRetries = 5
