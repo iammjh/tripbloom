@@ -1,6 +1,0 @@
-[build]
-runtime = "node@20"
-
-[deploy]
-startCommand = "cd backend && npm ci && npm start"
-restartPolicyMaxRetries = 5
