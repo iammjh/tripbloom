@@ -8,6 +8,7 @@
     "server": "nodemon backend/index.js",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "postinstall": "cd backend && npm ci --omit=dev",
+    "smoke-test": "node scripts/smoke-test.js",
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install"
   },
   "keywords": [
