@@ -1,0 +1,14 @@
+[build]
+runtime = "node@20"
+
+# Backend-only config: this file configures the backend service start command.
+# Keeping the backend start command here avoids accidental frontend overrides.
+[deploy]
+# Start command for backend service (installs dependencies and starts server)
+startCommand = "cd backend && npm ci && npm start"
+restartPolicyMaxRetries = 5
+
+# NOTE: Do NOT add frontend start/build commands here. Keep the frontend
+# configuration in Railway UI (honest-creation service) so it can be edited
+# independently. In Railway UI, set frontend Pre-deploy: `cd frontend && npm ci`
+# and Start Command: `cd frontend && npm run preview`.
