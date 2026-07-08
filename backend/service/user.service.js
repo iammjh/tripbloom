@@ -70,6 +70,10 @@ import { TourPackage } from '../model/tourPackage.model.js';
 // Signup bonus points for new users
 const SIGNUP_BONUS_POINTS = 100;
 
+function isBcryptHash(value) {
+  return typeof value === 'string' && /^\$2[aby]\$\d{2}\$/.test(value);
+}
+
 export async function registerUser({ fullName, email, phone, passwordHash, roles }) {
   if (!fullName || !email || !passwordHash || !roles) {
     return { error: 'fullName, email, passwordHash, and roles are required.' };
@@ -112,10 +116,16 @@ export async function loginUser({ email, passwordHash }) {
   if (!user) {
     return { error: 'Invalid email or password.' };
   }
-  // Verify password hash
-  const isMatch = await bcrypt.compare(passwordHash, user.passwordHash);
+  // Support legacy plaintext passwords in existing databases and migrate them after a successful login.
+  const isMatch = isBcryptHash(user.passwordHash)
+    ? await bcrypt.compare(passwordHash, user.passwordHash)
+    : passwordHash === user.passwordHash;
   if (!isMatch) {
     return { error: 'Invalid email or password.' };
+  }
+  if (!isBcryptHash(user.passwordHash)) {
+    user.passwordHash = await bcrypt.hash(passwordHash, 10);
+    await user.save();
   }
   // Check if user is active
   if (!user.isActive) {
