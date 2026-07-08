@@ -4,7 +4,7 @@ import axios from 'axios';
 import ManageUsersMenu from './ManageUsersMenu';
 import { 
   FaUsers, FaRoute, FaChartLine, FaCog, FaSignOutAlt, FaBell, FaSearch, 
-  FaCalendar, FaDollarSign, FaStar, FaEnvelope, FaCalendarAlt, FaEye, FaBullhorn, FaIdCard
+  FaCalendar, FaDollarSign, FaStar, FaEnvelope, FaCalendarAlt, FaEye, FaBullhorn, FaIdCard, FaMoneyBillWave
 } from 'react-icons/fa';
 
 const AdminLayout = () => {
@@ -126,7 +126,7 @@ const AdminLayout = () => {
         notifications.push({
           id: `refund-${b._id}`,
           type: 'refund',
-          icon: '💰',
+          icon: <FaMoneyBillWave className="text-green-500" />,
           title: 'Refund Request',
           message: `${b.customerId?.fullName || 'Customer'} needs refund for cancelled booking`,
           time: new Date(b.cancellation?.cancelledAt || b.updatedAt),
@@ -185,7 +185,7 @@ const AdminLayout = () => {
                     chatNotifs.push({
                       id: notifId,
                       type: 'live-chat',
-                      icon: '💬',
+                      icon: <FaEnvelope className="text-blue-500" />,
                       title: `Chat from ${senderName}`,
                       message: lastMsg.content?.substring(0, 50) + (lastMsg.content?.length > 50 ? '...' : ''),
                       time: new Date(lastMsg.sentAt),

@@ -1262,8 +1262,8 @@ const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }
                               </button>
                             </div>
                             {bookingData.pointsToUse > 0 && (
-                              <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-                                💰 Discount: -{bookingData.pointsToUse} BDT
+                              <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center gap-1.5 font-semibold">
+                                <FaMoneyBillWave className="text-green-600 flex-shrink-0" /> Discount: -{bookingData.pointsToUse} BDT
                               </p>
                             )}
                           </div>

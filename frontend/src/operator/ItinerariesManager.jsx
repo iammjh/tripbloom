@@ -95,7 +95,7 @@ const ItinerariesManager = () => {
   const saveItinerary = async () => {
     if (window.confirm('Save this itinerary?')) {
       // In real app, send to backend
-      alert('✅ Itinerary saved successfully!');
+      alert('Itinerary saved successfully!');
     }
   };
 

@@ -264,7 +264,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
   const handleStartTour = async () => {
     const allChecklistDone = Object.values(safetyChecklist).every(v => v);
     if (!allChecklistDone) {
-      alert('⚠️ Complete mandatory safety checks before starting the tour!');
+      alert('Complete mandatory safety checks before starting the tour!');
       setActiveTab('checklist');
       return;
     }
@@ -272,7 +272,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
     if (window.confirm('Mark tour as started?')) {
       setTourStarted(true);
       await saveDepartureUpdates({ safetyChecklist, tourStarted: true });
-      alert('✅ Tour started successfully!');
+      alert('Tour started successfully!');
     }
   };
 
@@ -281,7 +281,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
       // mark tourStarted false and set status to CLOSED
       setTourStarted(false);
       await saveDepartureUpdates({ tourStarted: false, status: 'CLOSED' });
-      alert('✅ Tour completed successfully!');
+      alert('Tour completed successfully!');
       onBack();
     }
   };

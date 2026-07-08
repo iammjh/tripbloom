@@ -52,7 +52,7 @@ export async function cancelUnpaidExpiredBookings() {
           await sendMessage({
             senderId,
             recipientId,
-            content: `⚠️ Your booking was automatically cancelled because the tour started without full payment. A refund of $${totalPaid} has been queued.`,
+            content: `Your booking was automatically cancelled because the tour started without full payment. A refund of $${totalPaid} has been queued.`,
             isBroadcast: false
           });
         }

@@ -422,7 +422,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
         })
       }).then(res => res.json()).then(data => {
         if (data.success) {
-          alert('✅ Broadcast message sent successfully!');
+          alert('Broadcast message sent successfully!');
           setBroadcastMessage('');
           setSelectedTour('');
         }

@@ -20,7 +20,7 @@ export const submitKYCController = async (req, res) => {
       user: req.user.id,
       documentType: req.body.documentType,
       documentNumber: req.body.documentNumber,
-      documentImage: `uploads/kyc/${req.file.filename}` // ✅ NORMALIZED RELATIVE WEB PATH
+      documentImage: `uploads/kyc/${req.file.filename}` // NORMALIZED RELATIVE WEB PATH
     });
 
     res.status(201).json({
@@ -77,8 +77,8 @@ export const verifyKYCController = async (req, res) => {
 
       if (recipientId && senderId) {
         const content = status === 'approved'
-          ? '✅ Your identity verification (KYC) has been approved. You can now book international tour packages.'
-          : `❌ Your KYC was rejected. ${remarks ? 'Reason: ' + remarks : ''}`;
+          ? 'Your identity verification (KYC) has been approved. You can now book international tour packages.'
+          : `Your KYC was rejected. ${remarks ? 'Reason: ' + remarks : ''}`;
 
         const result = await sendMessage({ senderId, recipientId, content, isBroadcast: false });
         if (result && result.error) {

@@ -523,8 +523,8 @@ const CustomerProfile = () => {
                   
                   {kycStatus === 'PENDING' && (
                     <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
-                      <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                        ⏳ Your KYC is under review. We'll notify you once verified.
+                      <p className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1.5 font-semibold">
+                        <FaClock className="text-yellow-600 flex-shrink-0 animate-pulse" /> Your KYC is under review. We'll notify you once verified.
                       </p>
                     </div>
                   )}

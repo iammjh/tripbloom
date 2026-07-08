@@ -248,7 +248,7 @@ export async function awardSignupBonusToExistingUsers() {
         });
         await customer.save();
         updatedUsers.push(customer);
-        console.log(`✅ Awarded ${SIGNUP_BONUS_POINTS} points to ${customer.fullName}. New total: ${customer.rewardPoints}`);
+        console.log(`Awarded ${SIGNUP_BONUS_POINTS} points to ${customer.fullName}. New total: ${customer.rewardPoints}`);
       }
     }
 

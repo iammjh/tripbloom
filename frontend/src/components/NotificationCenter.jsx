@@ -245,7 +245,7 @@ const NotificationCenter = ({ userId, userRole, onOpenChat, onOpenAdminChat }) =
               id: nid,
               type: 'kyc',
               title: 'KYC Verified',
-              message: '✅ Your identity verification (KYC) has been approved. You can now book international tour packages.',
+              message: 'Your identity verification (KYC) has been approved. You can now book international tour packages.',
               timestamp: new Date(kycData.kyc.verifiedAt || kycData.kyc.updatedAt || kycData.kyc.createdAt || Date.now()),
               icon: FaCheckCircle,
               color: 'green'
@@ -259,7 +259,7 @@ const NotificationCenter = ({ userId, userRole, onOpenChat, onOpenAdminChat }) =
               id: nid,
               type: 'kyc',
               title: 'KYC Rejected',
-              message: `❌ Your KYC was rejected${reason ? ': ' + reason : '.'}`,
+              message: `Your KYC was rejected${reason ? ': ' + reason : '.'}`,
               timestamp: new Date(kycData.kyc.updatedAt || kycData.kyc.createdAt || Date.now()),
               icon: FaTimesCircle,
               color: 'red'

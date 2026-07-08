@@ -3,7 +3,7 @@ import BookingDetailModal from './BookingDetailModal';
 import OperatorChatModal from './OperatorChatModal';
 import { useAuth } from '../context/AuthContext';
 import ReviewModal from './ReviewModal';
-import { FaExclamationTriangle, FaTimesCircle } from 'react-icons/fa';
+import { FaExclamationTriangle, FaTimesCircle, FaMoneyBillWave, FaClock } from 'react-icons/fa';
 
 const Bookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -166,9 +166,9 @@ const Bookings = () => {
         {hasRefund && (
           <div className={`${isRefundProcessed ? 'bg-green-50 border-green-500' : 'bg-yellow-50 border-yellow-500'} border-l-4 p-3 mb-3 rounded`}>
             <div className="flex items-start">
-              <span className={`${isRefundProcessed ? 'text-green-600' : 'text-yellow-600'} text-xl mr-2`}>
-                {isRefundProcessed ? '💰' : '⏳'}
-              </span>
+              <div className={`${isRefundProcessed ? 'text-green-600' : 'text-yellow-600'} text-xl mr-2 mt-0.5 flex-shrink-0`}>
+                {isRefundProcessed ? <FaMoneyBillWave /> : <FaClock className="animate-pulse" />}
+              </div>
               <div>
                 <p className={`font-semibold ${isRefundProcessed ? 'text-green-900' : 'text-yellow-900'}`}>
                   {isRefundProcessed ? 'Refund Processed' : 'Refund Pending'}
