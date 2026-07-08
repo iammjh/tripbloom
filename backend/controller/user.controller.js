@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { listUsers, createUser, updateUser, deactivateUser } from '../service/user.service.js';
 // List users with filters (role, active/inactive, search)
 export async function listUsersController(req, res) {
@@ -160,35 +161,64 @@ export async function loginController(req, res) {
     if (result.error) {
       return res.status(result.error === 'Invalid email or password.' ? 401 : 400).json({ success: false, message: result.error });
     }
-    res.json({ success: true, message: 'Login successful.', user: result.user });
+    res.json({ success: true, message: 'Login successful.', token: result.token, user: result.user });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
   }
 }
 
-// Simulated role-based middleware
-export function requireRole(role) {
+// JWT-based role verification middleware
+export function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    // Allow role to be supplied via request header (x-user-role) or body for compatibility
-    const userRole = (req.headers['x-user-role'] || req.headers['user-role'] || req.body.role || '').toString();
-    if (!userRole) {
-      return res.status(403).json({ success: false, message: 'Forbidden: role not provided.' });
+    // If requireAuth has not run yet, extract and verify user token
+    if (!req.user) {
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({ success: false, message: 'Authentication required: token missing.' });
+      }
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key_here');
+        req.user = decoded;
+      } catch (err) {
+        return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+      }
     }
-    if (userRole.toLowerCase() === role.toLowerCase()) {
+
+    const userRoles = req.user.roles || [];
+    const rolesLower = userRoles.map(r => r.toLowerCase());
+
+    // Check matches including mapping operator aliases
+    const isMatched = allowedRoles.some(role => {
+      const targetRole = role.toLowerCase();
+      return rolesLower.includes(targetRole) || 
+        (targetRole === 'operator' && rolesLower.includes('tour_operator')) || 
+        (targetRole === 'tour_operator' && rolesLower.includes('operator'));
+    });
+
+    if (isMatched) {
       return next();
     }
     return res.status(403).json({ success: false, message: 'Forbidden: insufficient role.' });
   };
 }
 
-// Authentication middleware - extracts user ID from headers
+// Authentication middleware - verifies signed JWT token signature
 export function requireAuth(req, res, next) {
-  const userId = req.headers['x-user-id'] || req.headers['user-id'];
-  if (!userId) {
-    return res.status(401).json({ success: false, message: 'Authentication required.' });
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Authentication token required.' });
   }
-  req.user = { id: userId };
-  next();
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key_here');
+    req.user = decoded; // Object containing user context: id, email, roles
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+  }
 }
 
 // Award signup bonus to existing users

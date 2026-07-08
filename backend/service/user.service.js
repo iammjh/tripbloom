@@ -35,7 +35,8 @@ export async function createUser({ fullName, email, phone, passwordHash, roles, 
   if (existingUser) {
     return { error: 'Email already exists.' };
   }
-  const user = new User({ fullName, email, phone, passwordHash, roles, isActive });
+  const hashedPassword = await bcrypt.hash(passwordHash, 10);
+  const user = new User({ fullName, email, phone, passwordHash: hashedPassword, roles, isActive });
   await user.save();
   return { user: { fullName, email, phone, roles, isActive } };
 }
@@ -61,6 +62,8 @@ export async function deactivateUser({ userId }) {
 
 
 // user.service.js
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import { User, ROLES } from '../model/user.model.js';
 import { TourPackage } from '../model/tourPackage.model.js';
 
@@ -76,12 +79,14 @@ export async function registerUser({ fullName, email, phone, passwordHash, roles
     return { error: 'Email already exists.' };
   }
   
+  const hashedPassword = await bcrypt.hash(passwordHash, 10);
+
   // Create user with signup bonus points
   const user = new User({ 
     fullName, 
     email, 
     phone, 
-    passwordHash, 
+    passwordHash: hashedPassword, 
     roles,
     rewardPoints: SIGNUP_BONUS_POINTS,
     pointsHistory: [{
@@ -102,18 +107,30 @@ export async function loginUser({ email, passwordHash }) {
   if (!email || !passwordHash) {
     return { error: 'Email and passwordHash are required.' };
   }
-  // Find user with matching email and password
-  const user = await User.findOne({ email, passwordHash });
+  // Find user with matching email
+  const user = await User.findOne({ email });
   if (!user) {
+    return { error: 'Invalid email or password.' };
+  }
+  // Verify password hash
+  const isMatch = await bcrypt.compare(passwordHash, user.passwordHash);
+  if (!isMatch) {
     return { error: 'Invalid email or password.' };
   }
   // Check if user is active
   if (!user.isActive) {
     return { error: 'Account is inactive.' };
   }
-  // Allow login for any active user, return user info and roles
-  // TODO: Generate JWT token here and return it
-  return { user: { _id: user._id, fullName: user.fullName, email: user.email, roles: user.roles } };
+  // Generate JWT token
+  const token = jwt.sign(
+    { id: user._id, email: user.email, roles: user.roles },
+    process.env.JWT_SECRET || 'your_jwt_secret_key_here',
+    { expiresIn: '7d' }
+  );
+  return { 
+    token,
+    user: { _id: user._id, fullName: user.fullName, email: user.email, roles: user.roles } 
+  };
 }
 
 // Saved packages management
@@ -190,12 +207,13 @@ export async function changePassword({ userId, currentPassword, newPassword }) {
   if (!user) return { error: 'User not found.' };
   
   // Verify current password
-  if (user.passwordHash !== currentPassword) {
+  const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isMatch) {
     return { error: 'Current password is incorrect.' };
   }
   
   // Update password
-  user.passwordHash = newPassword;
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
   await user.save();
   return { success: true };
 }

@@ -33,6 +33,9 @@ const AuthModal = ({ isOpen, onClose }) => {
           email: formData.email,
           passwordHash: formData.password
         });
+        if (res.data.token) {
+          localStorage.setItem('token', res.data.token);
+        }
         setMessage(res.data.message || 'Login successful!');
         // Role-based navigation
         const user = res.data.user;

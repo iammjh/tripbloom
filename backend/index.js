@@ -44,6 +44,7 @@ import {
   getSystemSettingController,
   getAllSystemSettingsController,
   updateSystemSettingController,
+  saveAllSystemSettingsController,
   createAnnouncementController,
   getActiveAnnouncementsController,
   updateAnnouncementController,
@@ -104,6 +105,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Messaging endpoints
 app.post('/api/messages', sendMessageController); // Send message (supports both booking and tour)
@@ -134,55 +136,57 @@ app.get('/api/health', (req, res) => {
 });
 
 // Admin user management endpoints
-app.get('/api/admin/users', listUsersController); // List users with filters
-app.post('/api/admin/users', createUserController); // Create user
-app.put('/api/admin/users/:userId', updateUserController); // Update user info
-app.delete('/api/admin/users/:userId', deactivateUserController); // Deactivate user
-app.post('/api/admin/award-signup-bonus', awardSignupBonusController); // Award signup bonus to existing users
+// Admin user management endpoints
+app.get('/api/admin/users', requireRole(ROLES.ADMIN), listUsersController); // List users with filters
+app.post('/api/admin/users', requireRole(ROLES.ADMIN), createUserController); // Create user
+app.put('/api/admin/users/:userId', requireRole(ROLES.ADMIN), updateUserController); // Update user info
+app.delete('/api/admin/users/:userId', requireRole(ROLES.ADMIN), deactivateUserController); // Deactivate user
+app.post('/api/admin/award-signup-bonus', requireRole(ROLES.ADMIN), awardSignupBonusController); // Award signup bonus to existing users
 
 // Admin Dashboard & Analytics
-app.get('/api/admin/dashboard', getAdminDashboardController); // Get admin dashboard overview
-app.get('/api/admin/activity-logs', getActivityLogsController); // Get activity logs
-app.get('/api/admin/metrics', getPlatformMetricsController); // Get platform metrics
+app.get('/api/admin/dashboard', requireRole(ROLES.ADMIN), getAdminDashboardController); // Get admin dashboard overview
+app.get('/api/admin/activity-logs', requireRole(ROLES.ADMIN), getActivityLogsController); // Get activity logs
+app.get('/api/admin/metrics', requireRole(ROLES.ADMIN), getPlatformMetricsController); // Get platform metrics
 
 // Admin User Management (Enhanced)
-app.put('/api/admin/users/:userId/role', updateUserRoleController); // Update user role
-app.post('/api/admin/users/:userId/suspend', toggleUserSuspensionController); // Suspend/activate user
-app.get('/api/admin/operators/stats', getOperatorsWithStatsController); // Get operators with stats
+app.put('/api/admin/users/:userId/role', requireRole(ROLES.ADMIN), updateUserRoleController); // Update user role
+app.post('/api/admin/users/:userId/suspend', requireRole(ROLES.ADMIN), toggleUserSuspensionController); // Suspend/activate user
+app.get('/api/admin/operators/stats', requireRole(ROLES.ADMIN), getOperatorsWithStatsController); // Get operators with stats
 
 // Admin Content Moderation
-app.post('/api/admin/packages/:packageId/moderate', moderateTourPackageController); // Approve/reject package
-app.delete('/api/admin/reviews/:reviewId', adminDeleteReviewController); // Delete review (Admin moderation)
+app.post('/api/admin/packages/:packageId/moderate', requireRole(ROLES.ADMIN), moderateTourPackageController); // Approve/reject package
+app.delete('/api/admin/reviews/:reviewId', requireRole(ROLES.ADMIN), adminDeleteReviewController); // Delete review (Admin moderation)
 
 // Admin System Settings
-app.get('/api/admin/settings', getAllSystemSettingsController); // Get all system settings
-app.get('/api/admin/settings/:key', getSystemSettingController); // Get system setting by key
-app.put('/api/admin/settings/:key', updateSystemSettingController); // Update system setting
+app.get('/api/admin/settings', requireRole(ROLES.ADMIN), getAllSystemSettingsController); // Get all system settings
+app.get('/api/admin/settings/:key', requireRole(ROLES.ADMIN), getSystemSettingController); // Get system setting by key
+app.put('/api/admin/settings/:key', requireRole(ROLES.ADMIN), updateSystemSettingController); // Update system setting
+app.post('/api/admin/settings', requireRole(ROLES.ADMIN), saveAllSystemSettingsController); // Bulk update settings
 
 // Admin Announcements
-app.post('/api/admin/announcements', createAnnouncementController); // Create announcement
-app.get('/api/admin/announcements', getActiveAnnouncementsController); // Get announcements
-app.put('/api/admin/announcements/:announcementId', updateAnnouncementController); // Update announcement
-app.delete('/api/admin/announcements/:announcementId', deleteAnnouncementController); // Delete announcement
+app.post('/api/admin/announcements', requireRole(ROLES.ADMIN), createAnnouncementController); // Create announcement
+app.get('/api/admin/announcements', requireRole(ROLES.ADMIN), getActiveAnnouncementsController); // Get announcements
+app.put('/api/admin/announcements/:announcementId', requireRole(ROLES.ADMIN), updateAnnouncementController); // Update announcement
+app.delete('/api/admin/announcements/:announcementId', requireRole(ROLES.ADMIN), deleteAnnouncementController); // Delete announcement
 
 // Public announcements endpoint (for customers/operators)
 app.get('/api/announcements', getActiveAnnouncementsController); // Get active announcements for users
 
 // User profile routes
-app.get('/api/users/:userId', getUserController); // Get user by ID
-app.put('/api/users/:userId', updateProfileController); // Update own profile
-app.put('/api/users/:userId/password', changePasswordController); // Change password
+app.get('/api/users/:userId', requireAuth, getUserController); // Get user by ID
+app.put('/api/users/:userId', requireAuth, updateProfileController); // Update own profile
+app.put('/api/users/:userId/password', requireAuth, changePasswordController); // Change password
 
 import { createTourPackageController, updateTourPackageController, setTourPackageActiveController, getTourPackageController, listTourPackagesController, searchTourPackagesController, deleteTourPackageController } from './controller/tourPackage.controller.js';
 // ...existing code...
 
 // Tour package management endpoints
-app.post('/api/admin/packages', createTourPackageController); // Create package
-app.put('/api/admin/packages/:packageId', updateTourPackageController); // Update package
-app.patch('/api/admin/packages/:packageId/active', setTourPackageActiveController); // Activate/deactivate package
-app.get('/api/admin/packages/:packageId', getTourPackageController); // Get package by ID
-app.get('/api/admin/packages', listTourPackagesController); // List packages
-app.delete('/api/admin/packages/:packageId', deleteTourPackageController); // Delete package
+app.post('/api/admin/packages', requireRole(ROLES.ADMIN), createTourPackageController); // Create package
+app.put('/api/admin/packages/:packageId', requireRole(ROLES.ADMIN), updateTourPackageController); // Update package
+app.patch('/api/admin/packages/:packageId/active', requireRole(ROLES.ADMIN), setTourPackageActiveController); // Activate/deactivate package
+app.get('/api/admin/packages/:packageId', requireRole(ROLES.ADMIN), getTourPackageController); // Get package by ID
+app.get('/api/admin/packages', requireRole(ROLES.ADMIN), listTourPackagesController); // List packages
+app.delete('/api/admin/packages/:packageId', requireRole(ROLES.ADMIN), deleteTourPackageController); // Delete package
 
 // Customer-facing package search/filter endpoint
 app.get('/api/packages/search', searchTourPackagesController); // Search and filter packages for customers
@@ -199,12 +203,12 @@ import {
   removeOperatorFromDepartureController
 } from './controller/groupDeparture.controller.js';
 // Group departure management endpoints
-app.post('/api/admin/group-departures', createGroupDepartureController); // Create group departure
-app.put('/api/admin/group-departures/:departureId', updateGroupDepartureController); // Update group departure
-app.get('/api/admin/group-departures', listGroupDeparturesController); // List group departures
-app.get('/api/admin/group-departures/:departureId', getGroupDepartureByIdController); // Get single departure
-app.delete('/api/admin/group-departures/:departureId', deleteGroupDepartureController); // Delete departure
-app.patch('/api/admin/group-departures/:departureId/status', setGroupDepartureStatusController); // Set group departure status
+app.post('/api/admin/group-departures', requireRole(ROLES.ADMIN), createGroupDepartureController); // Create group departure
+app.put('/api/admin/group-departures/:departureId', requireRole(ROLES.ADMIN, ROLES.TOUR_OPERATOR), updateGroupDepartureController); // Update group departure
+app.get('/api/admin/group-departures', requireRole(ROLES.ADMIN), listGroupDeparturesController); // List group departures
+app.get('/api/admin/group-departures/:departureId', requireRole(ROLES.ADMIN, ROLES.TOUR_OPERATOR), getGroupDepartureByIdController); // Get single departure
+app.delete('/api/admin/group-departures/:departureId', requireRole(ROLES.ADMIN), deleteGroupDepartureController); // Delete departure
+app.patch('/api/admin/group-departures/:departureId/status', requireRole(ROLES.ADMIN, ROLES.TOUR_OPERATOR), setGroupDepartureStatusController); // Set group departure status
 
 // Operator assignment endpoints for group departures
 app.post('/api/group-departure/:departureId/assign-operators', assignOperatorsToDepartureController);
@@ -214,13 +218,13 @@ app.get('/api/group-departure/operator/:operatorId/future', findFutureDepartures
 app.post('/api/group-departure/operator/:operatorId/remove-future', removeOperatorFromFutureDeparturesController);
 
 // New endpoints for individual operator add/remove
-app.post('/api/admin/group-departures/:departureId/operators', addOperatorToDepartureController);
-app.delete('/api/admin/group-departures/:departureId/operators/:operatorId', removeOperatorFromDepartureController);
+app.post('/api/admin/group-departures/:departureId/operators', requireRole(ROLES.ADMIN), addOperatorToDepartureController);
+app.delete('/api/admin/group-departures/:departureId/operators/:operatorId', requireRole(ROLES.ADMIN), removeOperatorFromDepartureController);
 
 // Seat map endpoints for group departures
 import { getSeatMapController, updateSeatMapController, checkDepartureAvailabilityController, getAvailableDeparturesForPackageController } from './controller/groupDeparture.controller.js';
-app.get('/api/group-departure/:departureId/seat-map', getSeatMapController);
-app.put('/api/group-departure/:departureId/seat-map', updateSeatMapController);
+app.get('/api/group-departure/:departureId/seat-map', requireAuth, getSeatMapController);
+app.put('/api/group-departure/:departureId/seat-map', requireAuth, updateSeatMapController);
 
 // Customer-facing departure availability endpoints
 app.get('/api/departures/:departureId/availability', checkDepartureAvailabilityController); // Check single departure availability
@@ -244,20 +248,20 @@ import {
   rejectDateChangeController,
   autoCompleteBookingsController
 } from './controller/booking.controller.js';
-app.post('/api/bookings', createBookingController); // Create booking
-app.get('/api/bookings/:bookingId', getBookingByIdController); // Get booking by ID
-app.get('/api/bookings', listBookingsController); // List bookings with filters
-app.put('/api/bookings/:bookingId', updateBookingController); // Update booking
-app.post('/api/bookings/:bookingId/cancel', cancelBookingController); // Cancel booking
-app.post('/api/bookings/:bookingId/request-date-change', requestDateChangeController); // Request date change
-app.post('/api/bookings/:bookingId/payment', addPaymentController); // Add payment
-app.get('/api/customers/:customerId/stats', getCustomerStatsController); // Customer stats
-app.post('/api/bookings/:bookingId/complete', completeBookingController); // Mark booking complete
-app.post('/api/bookings/:bookingId/checkin', checkInBookingController); // Customer check-in
-app.post('/api/admin/bookings/cancel-unpaid', cancelUnpaidBookingsController); // Cancel unpaid expired bookings
-app.post('/api/admin/bookings/:bookingId/refund', processRefundController); // Process refund (Admin)
-app.post('/api/admin/bookings/:bookingId/approve-date-change', approveDateChangeController); // Approve date change (Admin)
-app.post('/api/admin/bookings/:bookingId/reject-date-change', rejectDateChangeController); // Reject date change (Admin)
+app.post('/api/bookings', requireAuth, createBookingController); // Create booking
+app.get('/api/bookings/:bookingId', requireAuth, getBookingByIdController); // Get booking by ID
+app.get('/api/bookings', requireAuth, listBookingsController); // List bookings with filters
+app.put('/api/bookings/:bookingId', requireAuth, updateBookingController); // Update booking
+app.post('/api/bookings/:bookingId/cancel', requireAuth, cancelBookingController); // Cancel booking
+app.post('/api/bookings/:bookingId/request-date-change', requireAuth, requestDateChangeController); // Request date change
+app.post('/api/bookings/:bookingId/payment', requireAuth, addPaymentController); // Add payment
+app.get('/api/customers/:customerId/stats', requireAuth, getCustomerStatsController); // Customer stats
+app.post('/api/bookings/:bookingId/complete', requireRole(ROLES.ADMIN), completeBookingController); // Mark booking complete
+app.post('/api/bookings/:bookingId/checkin', requireAuth, checkInBookingController); // Customer check-in
+app.post('/api/admin/bookings/cancel-unpaid', requireRole(ROLES.ADMIN), cancelUnpaidBookingsController); // Cancel unpaid expired bookings
+app.post('/api/admin/bookings/:bookingId/refund', requireRole(ROLES.ADMIN), processRefundController); // Process refund (Admin)
+app.post('/api/admin/bookings/:bookingId/approve-date-change', requireRole(ROLES.ADMIN), approveDateChangeController); // Approve date change (Admin)
+app.post('/api/admin/bookings/:bookingId/reject-date-change', requireRole(ROLES.ADMIN), rejectDateChangeController); // Reject date change (Admin)
 // Admin: trigger auto-complete job on demand
 app.post('/api/admin/bookings/auto-complete', requireRole(ROLES.ADMIN), autoCompleteBookingsController);
 
@@ -304,12 +308,12 @@ app.post('/api/newsletter', (req, res) => {
 });
 
 // Get all users (for testing/demo only)
-app.get('/api/users', getAllUsersController);
+app.get('/api/users', requireRole(ROLES.ADMIN), getAllUsersController);
 
 // User saved packages endpoints
-app.get('/api/users/:userId/saved', getSavedPackagesController);
-app.post('/api/users/:userId/save/:packageId', savePackageController);
-app.delete('/api/users/:userId/save/:packageId', unsavePackageController);
+app.get('/api/users/:userId/saved', requireAuth, getSavedPackagesController);
+app.post('/api/users/:userId/save/:packageId', requireAuth, savePackageController);
+app.delete('/api/users/:userId/save/:packageId', requireAuth, unsavePackageController);
 
 
 

@@ -265,10 +265,42 @@ export async function getAllSystemSettingsController(req, res) {
     });
   }
 
+  // Convert settings array into root-level keys for frontend compatibility
+  const settingsObj = {};
+  if (result.settings && Array.isArray(result.settings)) {
+    result.settings.forEach(s => {
+      settingsObj[s.key] = s.value;
+    });
+  }
+
   res.json({
     success: true,
-    ...result
+    ...result,
+    ...settingsObj
   });
+}
+
+// Bulk update system settings
+export async function saveAllSystemSettingsController(req, res) {
+  const settingsData = req.body;
+  const { adminId, ipAddress } = getAdminInfo(req);
+
+  try {
+    for (const [key, value] of Object.entries(settingsData)) {
+      const result = await updateSystemSetting({
+        key,
+        value,
+        adminId,
+        ipAddress
+      });
+      if (result.error) {
+        return res.status(500).json({ success: false, message: result.error });
+      }
+    }
+    res.json({ success: true, message: 'Settings saved successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to save settings', error: err.message });
+  }
 }
 
 // Update system setting

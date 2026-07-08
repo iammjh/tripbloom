@@ -21,7 +21,16 @@ const kycSchema = new mongoose.Schema({
 
   documentImage: {
     type: String, // Cloudinary / local path
-    required: true
+    required: true,
+    get: function(val) {
+      if (!val) return val;
+      let normalized = val.replace(/\\/g, '/');
+      const uploadsIndex = normalized.indexOf('uploads/');
+      if (uploadsIndex !== -1) {
+        normalized = normalized.substring(uploadsIndex);
+      }
+      return normalized;
+    }
   },
 
   // Denormalized user info for quick reads (kept in sync on submit)
@@ -37,6 +46,10 @@ const kycSchema = new mongoose.Schema({
   verifiedAt: Date,
 
   remarks: String
-}, { timestamps: true });
+}, { 
+  timestamps: true,
+  toJSON: { getters: true },
+  toObject: { getters: true }
+});
 
 export default mongoose.model("KYC", kycSchema);

@@ -1,5 +1,6 @@
 // tourPackage.service.js
 import { TourPackage, TOUR_PACKAGE_TYPES_ENUM, PERSONAL_CATEGORIES_ENUM } from '../model/tourPackage.model.js';
+import { GroupDeparture } from '../model/groupDeparture.model.js';
 
 // Helper to escape user input for use in RegExp
 function escapeRegex(text) {
@@ -60,14 +61,21 @@ export async function updateTourPackage({ packageId, ...updates }) {
 
 // Activate/deactivate package
 export async function setTourPackageActive({ packageId, isActive, force = false }) {
-  // TODO: Check for future group departures if deactivating
-  // If found and !force, return warning
-  // If force, proceed
   const pkg = await TourPackage.findById(packageId);
   if (!pkg) return { error: 'Package not found.' };
   if (!isActive) {
-    // TODO: Check for future group departures
-    // if (hasFutureDepartures && !force) return { warning: 'Package has future group departures.' };
+    // Check for future group departures (startDate > now, status !== 'CANCELLED')
+    const futureDeparture = await GroupDeparture.findOne({
+      packageId: packageId,
+      startDate: { $gt: new Date() },
+      status: { $ne: 'CANCELLED' }
+    });
+
+    if (futureDeparture && !force) {
+      return {
+        warning: 'Package has future group departures scheduled. Deactivating it may leave bookings in limbo. Use force to proceed anyway.'
+      };
+    }
   }
   pkg.isActive = isActive;
   await pkg.save();

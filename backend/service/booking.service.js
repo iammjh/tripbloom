@@ -4,6 +4,7 @@ import { TourPackage } from '../model/tourPackage.model.js';
 import { GroupDeparture } from '../model/groupDeparture.model.js';
 import { User } from '../model/user.model.js';
 import { isUserKYCApproved, getUserKYCStatus } from './kyc.service.js';
+import { sendMessage } from './message.service.js';
 
 // Check and cancel unpaid bookings that have passed start date
 export async function cancelUnpaidExpiredBookings() {
@@ -42,7 +43,22 @@ export async function cancelUnpaidExpiredBookings() {
       await booking.save();
       cancelledBookings.push(booking);
       
-      // TODO: Send email/notification to customer about cancellation
+      // Send platform notification message to the customer
+      try {
+        const recipientId = booking.customerId;
+        const adminUser = await User.findOne({ roles: { $in: ['admin', 'ADMIN'] } }).select('_id');
+        const senderId = adminUser ? adminUser._id : null;
+        if (recipientId && senderId) {
+          await sendMessage({
+            senderId,
+            recipientId,
+            content: `⚠️ Your booking was automatically cancelled because the tour started without full payment. A refund of $${totalPaid} has been queued.`,
+            isBroadcast: false
+          });
+        }
+      } catch (err) {
+        console.error('Failed to send automatic cancellation message:', err);
+      }
     }
   }
   

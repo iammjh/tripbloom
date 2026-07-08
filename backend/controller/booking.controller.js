@@ -41,6 +41,17 @@ export async function createBookingController(req, res) {
     });
   }
 
+  // BOLA Check: Customers can only create bookings for themselves
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  if (!isAdmin && customerId !== user.id) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: cannot create booking for another user'
+    });
+  }
+
   const result = await createBooking({
     customerId,
     packageId,
@@ -82,6 +93,22 @@ export async function getBookingByIdController(req, res) {
     });
   }
 
+  // BOLA Check: Customers can only view their own bookings
+  const booking = result.booking;
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOperator = userRoles.map(r => r.toLowerCase()).includes('operator') || userRoles.map(r => r.toLowerCase()).includes('tour_operator');
+  const isOwner = booking.customerId?._id?.toString() === user.id || booking.customerId?.toString() === user.id;
+  const isAssignedOperator = booking.assignedOperator?._id?.toString() === user.id || booking.assignedOperator?.toString() === user.id;
+
+  if (!isAdmin && !isOwner && !(isOperator && isAssignedOperator)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: access to this booking is restricted.'
+    });
+  }
+
   res.json({
     success: true,
     booking: result.booking
@@ -100,8 +127,19 @@ export async function listBookingsController(req, res) {
     endDate
   } = req.query;
 
+  // BOLA Check: Customers can only list their own bookings
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOperator = userRoles.map(r => r.toLowerCase()).includes('operator') || userRoles.map(r => r.toLowerCase()).includes('tour_operator');
+
+  let queryCustomerId = customerId;
+  if (!isAdmin && !isOperator) {
+    queryCustomerId = user.id;
+  }
+
   const result = await listBookings({
-    customerId,
+    customerId: queryCustomerId,
     packageId,
     groupDepartureId,
     status,
@@ -129,6 +167,21 @@ export async function updateBookingController(req, res) {
   const { bookingId } = req.params;
   const { travelers, operatorNotes } = req.body;
 
+  // BOLA Check: Customers can only update their own bookings
+  const bookingResult = await getBookingById(bookingId);
+  if (bookingResult.error) {
+    return res.status(404).json({ success: false, message: bookingResult.error });
+  }
+  const booking = bookingResult.booking;
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOwner = booking.customerId?._id?.toString() === user.id || booking.customerId?.toString() === user.id;
+
+  if (!isAdmin && !isOwner) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot update this booking' });
+  }
+
   const result = await updateBooking({
     bookingId,
     travelers,
@@ -152,13 +205,28 @@ export async function updateBookingController(req, res) {
 // Cancel booking
 export async function cancelBookingController(req, res) {
   const { bookingId } = req.params;
-  const { userId, reason } = req.body;
+  const { reason } = req.body;
+  const userId = req.user.id; // Extract directly from verified user context
 
-  if (!userId || !reason) {
+  if (!reason) {
     return res.status(400).json({
       success: false,
-      message: 'User ID and cancellation reason are required'
+      message: 'Cancellation reason is required'
     });
+  }
+
+  // BOLA Check: Customers can only cancel their own bookings
+  const bookingResult = await getBookingById(bookingId);
+  if (bookingResult.error) {
+    return res.status(404).json({ success: false, message: bookingResult.error });
+  }
+  const booking = bookingResult.booking;
+  const userRoles = req.user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOwner = booking.customerId?._id?.toString() === userId || booking.customerId?.toString() === userId;
+
+  if (!isAdmin && !isOwner) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot cancel this booking' });
   }
 
   const result = await cancelBooking({
@@ -194,6 +262,21 @@ export async function addPaymentController(req, res) {
     });
   }
 
+  // BOLA Check: Customers can only pay for their own bookings
+  const bookingResult = await getBookingById(bookingId);
+  if (bookingResult.error) {
+    return res.status(404).json({ success: false, message: bookingResult.error });
+  }
+  const booking = bookingResult.booking;
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOwner = booking.customerId?._id?.toString() === user.id || booking.customerId?.toString() === user.id;
+
+  if (!isAdmin && !isOwner) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot add payment to this booking' });
+  }
+
   const result = await addPayment({
     bookingId,
     amount,
@@ -219,7 +302,19 @@ export async function addPaymentController(req, res) {
 export async function checkInBookingController(req, res) {
   try {
     const { bookingId } = req.params;
-    const { userId } = req.body;
+    const userId = req.user.id; // Extract from verified user context
+
+    // BOLA Check: Customers can only check in their own bookings
+    const bookingResult = await getBookingById(bookingId);
+    if (bookingResult.error) {
+      return res.status(404).json({ success: false, message: bookingResult.error });
+    }
+    const booking = bookingResult.booking;
+    const isOwner = booking.customerId?._id?.toString() === userId || booking.customerId?.toString() === userId;
+
+    if (!isOwner) {
+      return res.status(403).json({ success: false, message: 'Forbidden: cannot check in for this booking' });
+    }
 
     const result = await checkInBooking(bookingId, userId);
     if (result.error) {
@@ -235,6 +330,16 @@ export async function checkInBookingController(req, res) {
 // Get customer booking statistics
 export async function getCustomerStatsController(req, res) {
   const { customerId } = req.params;
+
+  // BOLA Check: Customers can only query their own stats
+  const user = req.user;
+  const userRoles = user.roles || [];
+  const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
+  const isOperator = userRoles.map(r => r.toLowerCase()).includes('operator') || userRoles.map(r => r.toLowerCase()).includes('tour_operator');
+
+  if (!isAdmin && !isOperator && customerId !== user.id) {
+    return res.status(403).json({ success: false, message: 'Forbidden: access is restricted' });
+  }
 
   const result = await getCustomerBookingStats(customerId);
 
@@ -303,7 +408,7 @@ export async function autoCompleteBookingsController(req, res) {
 export async function processRefundController(req, res) {
   try {
     const { bookingId } = req.params;
-    const adminId = req.body.adminId || req.user?._id; // Get from auth middleware or body
+    const adminId = req.user?.id || req.body.adminId; // Extract from verified user context
 
     const result = await processRefund({ bookingId, adminId });
 
@@ -326,13 +431,25 @@ export async function processRefundController(req, res) {
 export async function requestDateChangeController(req, res) {
   try {
     const { bookingId } = req.params;
-    const { userId, requestedDate, reason } = req.body;
+    const { requestedDate, reason } = req.body;
+    const userId = req.user?.id || req.body.userId; // Extract from verified user context
 
     if (!userId || !requestedDate) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: userId and requestedDate'
       });
+    }
+
+    // BOLA Check: Customers can only request date change for their own bookings
+    const bookingResult = await getBookingById(bookingId);
+    if (bookingResult.error) {
+      return res.status(404).json({ success: false, message: bookingResult.error });
+    }
+    const booking = bookingResult.booking;
+    const isOwner = booking.customerId?._id?.toString() === userId || booking.customerId?.toString() === userId;
+    if (!isOwner) {
+      return res.status(403).json({ success: false, message: 'Forbidden: cannot request date change for another user\'s booking.' });
     }
 
     const result = await requestDateChange({ bookingId, userId, requestedDate, reason });
@@ -355,7 +472,8 @@ export async function requestDateChangeController(req, res) {
 export async function approveDateChangeController(req, res) {
   try {
     const { bookingId } = req.params;
-    const { adminId, newStartDate } = req.body;
+    const adminId = req.user?.id || req.body.adminId; // Extract from verified user context
+    const { newStartDate } = req.body;
 
     if (!adminId || !newStartDate) {
       return res.status(400).json({
@@ -384,7 +502,8 @@ export async function approveDateChangeController(req, res) {
 export async function rejectDateChangeController(req, res) {
   try {
     const { bookingId } = req.params;
-    const { adminId, reviewNotes } = req.body;
+    const adminId = req.user?.id || req.body.adminId; // Extract from verified user context
+    const { reviewNotes } = req.body;
 
     if (!adminId) {
       return res.status(400).json({

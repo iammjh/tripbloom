@@ -87,7 +87,7 @@ const TourPackagesList = ({ onViewDetails }) => {
 
   const togglePackageStatus = async (packageId, currentStatus) => {
     try {
-      await axios.put(`/api/tour-packages/${packageId}`, {
+      await axios.patch(`/api/admin/packages/${packageId}/active`, {
         isActive: !currentStatus
       });
       fetchPackages(); // Refresh list

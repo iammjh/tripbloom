@@ -27,8 +27,33 @@ export async function createGroupDepartureController(req, res) {
   res.json({ success: true, message: 'Group departure created successfully.', departure: result.departure });
 }
 
+// Helper to perform BOLA check: Admins bypass, operators must be assigned to the departure
+function verifyDepartureAccess(departure, user) {
+  if (!user) return false;
+  const userRoles = user.roles || [];
+  const rolesLower = userRoles.map(r => r.toLowerCase());
+  
+  if (rolesLower.includes('admin')) {
+    return true;
+  }
+  
+  // Must be a tour operator assigned to this departure
+  const isAssigned = departure.operators && departure.operators.some(op => 
+    (op.operatorId?._id || op.operatorId || '').toString() === user.id
+  );
+  return isAssigned;
+}
+
 export async function updateGroupDepartureController(req, res) {
   const { departureId } = req.params;
+  const departureResult = await getGroupDepartureById({ departureId });
+  if (departureResult.error || !departureResult.departure) {
+    return res.status(404).json({ success: false, message: departureResult.error || 'Departure not found.' });
+  }
+  if (!verifyDepartureAccess(departureResult.departure, req.user)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+  }
+
   const { startDate, endDate, totalSeats, pricePerPerson, status, operatorIds, assignedBy } = req.body;
   const result = await updateGroupDeparture({ departureId, startDate, endDate, totalSeats, pricePerPerson, status, operatorIds, assignedBy });
   if (result.error) return res.status(400).json({ success: false, message: result.error });
@@ -43,7 +68,12 @@ export async function listGroupDeparturesController(req, res) {
 export async function getGroupDepartureByIdController(req, res) {
   const { departureId } = req.params;
   const result = await getGroupDepartureById({ departureId });
-  if (result.error) return res.status(404).json({ success: false, message: result.error });
+  if (result.error || !result.departure) return res.status(404).json({ success: false, message: result.error || 'Departure not found.' });
+
+  if (!verifyDepartureAccess(result.departure, req.user)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+  }
+
   res.json({ success: true, message: 'Departure retrieved successfully.', departure: result.departure });
 }
 
@@ -54,10 +84,16 @@ export async function deleteGroupDepartureController(req, res) {
   res.json({ success: true, message: 'Departure deleted successfully.' });
 }
 
-
-
 export async function setGroupDepartureStatusController(req, res) {
   const { departureId } = req.params;
+  const departureResult = await getGroupDepartureById({ departureId });
+  if (departureResult.error || !departureResult.departure) {
+    return res.status(404).json({ success: false, message: departureResult.error || 'Departure not found.' });
+  }
+  if (!verifyDepartureAccess(departureResult.departure, req.user)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+  }
+
   const { status } = req.body;
   const result = await setGroupDepartureStatus({ departureId, status });
   if (result.error) return res.status(400).json({ success: false, message: result.error });
@@ -153,12 +189,23 @@ export async function getSeatMapController(req, res) {
   if (result.error || !result.departure) {
     return res.status(404).json({ success: false, message: 'Departure not found.' });
   }
+  if (!verifyDepartureAccess(result.departure, req.user)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+  }
   res.json({ success: true, seatMap: result.departure.seatMap || [] });
 }
 
 // Update seat map for a group departure
 export async function updateSeatMapController(req, res) {
   const { departureId } = req.params;
+  const departureResult = await getGroupDepartureById({ departureId });
+  if (departureResult.error || !departureResult.departure) {
+    return res.status(404).json({ success: false, message: departureResult.error || 'Departure not found.' });
+  }
+  if (!verifyDepartureAccess(departureResult.departure, req.user)) {
+    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+  }
+
   const { seatMap } = req.body;
   if (!Array.isArray(seatMap)) {
     return res.status(400).json({ success: false, message: 'seatMap must be an array.' });

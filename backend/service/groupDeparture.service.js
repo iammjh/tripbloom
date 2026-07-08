@@ -1,4 +1,5 @@
 // groupDeparture.service.js
+import mongoose from 'mongoose';
 import { GroupDeparture, DEPARTURE_STATUS_ENUM } from '../model/groupDeparture.model.js';
 import { User } from '../model/user.model.js';
 
@@ -190,7 +191,46 @@ export async function setGroupDepartureStatus({ departureId, status }) {
   if (!DEPARTURE_STATUS_ENUM.includes(status)) return { error: 'Invalid status.' };
   departure.status = status;
   await departure.save();
-  // TODO: If status is CANCELLED, update related bookings and trigger refund logic
+
+  // If status is CANCELLED, cancel all associated bookings and trigger refunds
+  if (status === 'CANCELLED') {
+    try {
+      const Booking = mongoose.model('Booking');
+      const bookings = await Booking.find({
+        groupDepartureId: departureId,
+        status: { $in: ['PENDING', 'CONFIRMED'] }
+      });
+
+      for (const booking of bookings) {
+        const totalPaid = booking.payments
+          .filter(p => p.status === 'SUCCESS' || p.status === 'COMPLETED' || p.status === 'CONFIRMED')
+          .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        booking.status = 'CANCELLED';
+        booking.cancellation = {
+          isCancelled: true,
+          reason: 'Tour group departure was cancelled by operator/admin',
+          cancelledAt: new Date(),
+          refundAmount: totalPaid,
+          refundProcessed: false
+        };
+
+        if (totalPaid > 0) {
+          booking.payments.push({
+            amount: totalPaid,
+            method: 'REFUND',
+            status: 'PENDING',
+            transactionRef: `REFUND-${booking._id}-${Date.now()}`
+          });
+        }
+
+        await booking.save();
+      }
+    } catch (err) {
+      console.error(`Error cancelling bookings for group departure ${departureId}:`, err);
+    }
+  }
+
   return { departure };
 }
 

@@ -20,7 +20,7 @@ export const submitKYCController = async (req, res) => {
       user: req.user.id,
       documentType: req.body.documentType,
       documentNumber: req.body.documentNumber,
-      documentImage: req.file.path // ✅ FILE FROM MULTER
+      documentImage: `uploads/kyc/${req.file.filename}` // ✅ NORMALIZED RELATIVE WEB PATH
     });
 
     res.status(201).json({
