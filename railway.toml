@@ -1,0 +1,12 @@
+[build]
+runtime = "node@20"
+
+# Backend-only config: this file configures the backend service start command.
+# Keeping the backend start command here avoids accidental frontend overrides.
+[deploy]
+# Start command for backend service (installs dependencies and starts server)
+# Keep only the runtime here. Deploy/start commands are configured per-service
+# in the Railway UI so frontend and backend can be managed independently.
+# If you need a repo-level deploy config, add it carefully and target only
+# the intended service.
+# configuration in Railway UI (honest-creation service) so it can be edited

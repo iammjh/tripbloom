@@ -1,7 +1,14 @@
 {
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "install-deps": "npm ci --omit=dev",
+    "smoke-test": "node ../scripts/smoke-test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -11,7 +18,10 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "multer": "^2.0.2",
-    "node-cron": "^3.0.2",
-    "mongodb-memory-server": "^8.12.1"
+    "node-cron": "^3.0.2"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^8.12.1",
+    "nodemon": "^3.0.2"
   }
 }

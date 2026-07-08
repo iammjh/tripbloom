@@ -1,26 +1,9 @@
 {
-  "version": 2,
-  "buildCommand": "npm install && npm run install-all && npm run build --prefix frontend",
-  "framework": "nodejs",
-  "functions": {
-    "backend/**": {
-      "runtime": "nodejs20.x"
-    }
-  },
+  "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "backend/index.js"
-    },
-    {
-      "source": "/:path((?!api).*)*",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "env": {
-    "MONGODB_URI": "@mongodb_uri",
-    "JWT_SECRET": "@jwt_secret",
-    "NODE_ENV": "production",
-    "PORT": "3001"
-  }
+  ]
 }
