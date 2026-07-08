@@ -105,7 +105,8 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  process.env.FRONTEND_URL || '', // Add your Vercel URL here
+  process.env.FRONTEND_URL || '',
+  process.env.CORS_ORIGIN || '',
 ].filter(Boolean);
 
 // Middleware (MUST be before routes)

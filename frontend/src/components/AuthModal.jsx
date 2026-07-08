@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import axios from 'axios';
 import { FaTimes, FaGoogle, FaFacebook, FaEnvelope, FaLock, FaUser } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import apiClient from '../api/client';
 
 const AuthModal = ({ isOpen, onClose }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -29,7 +29,7 @@ const AuthModal = ({ isOpen, onClose }) => {
     if (isLogin) {
       // Login logic: send email and password
       try {
-        const res = await axios.post('/api/login', {
+        const res = await apiClient.post('/login', {
           email: formData.email,
           passwordHash: formData.password
         });
@@ -82,7 +82,7 @@ const AuthModal = ({ isOpen, onClose }) => {
     } else {
       // Signup logic: send fullName, email, phone, password, roles
       try {
-        const res = await axios.post('/api/signup', {
+        const res = await apiClient.post('/signup', {
           fullName: formData.fullName,
           email: formData.email,
           phone: formData.phone,
