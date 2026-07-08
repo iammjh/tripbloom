@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PaymentForm from './PaymentForm';
 import Invoice from './Invoice';
+import { FaExclamationTriangle, FaCalendarAlt, FaMoneyBillWave } from 'react-icons/fa';
 
 const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
   const [showPayment, setShowPayment] = useState(false);
@@ -300,7 +301,9 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                 className="w-full p-4 border-2 border-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-start">
-                  <div className="flex-shrink-0 text-red-500 text-2xl mr-3">💰</div>
+                  <div className="flex-shrink-0 text-red-500 text-2xl mr-3">
+                    <FaMoneyBillWave />
+                  </div>
                   <div className="flex-1">
                     <h4 className="font-bold text-gray-900 dark:text-white mb-1">
                       {cancelling ? 'Processing...' : 'Cancel with Refund'}
@@ -309,8 +312,8 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                       Cancel your booking and receive a refund based on our cancellation policy.
                       Refund amount depends on how far in advance you cancel.
                     </p>
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-semibold">
-                      ⚠️ This action cannot be undone
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-semibold flex items-center gap-1.5">
+                      <FaExclamationTriangle className="text-red-500" /> This action cannot be undone
                     </p>
                   </div>
                 </div>
@@ -324,7 +327,9 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                   className="w-full p-4 border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-start">
-                    <div className="flex-shrink-0 text-blue-500 text-2xl mr-3">📅</div>
+                    <div className="flex-shrink-0 text-blue-500 text-2xl mr-3">
+                      <FaCalendarAlt />
+                    </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-gray-900 dark:text-white mb-1">
                         {requestingDateChange ? 'Submitting...' : 'Request Date Change'}
@@ -333,7 +338,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                         Keep your booking and request to change your travel dates.
                         Subject to availability and approval.
                       </p>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold flex items-center gap-1">
                         ✓ No cancellation fees
                       </p>
                     </div>

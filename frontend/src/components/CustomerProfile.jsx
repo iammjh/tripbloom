@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaEnvelope, FaPhone, FaLock, FaSave, FaArrowLeft, FaIdCard, FaCheckCircle, FaClock, FaTimesCircle } from 'react-icons/fa';
+import { FaUser, FaEnvelope, FaPhone, FaLock, FaSave, FaArrowLeft, FaIdCard, FaCheckCircle, FaClock, FaTimesCircle, FaExclamationTriangle } from 'react-icons/fa';
 
 const CustomerProfile = () => {
   const navigate = useNavigate();
@@ -473,8 +473,9 @@ const CustomerProfile = () => {
               </div>
 
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  ⚠️ You will be logged out after changing your password. Please log in again with your new password.
+                <p className="text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-2">
+                  <FaExclamationTriangle className="text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <span>You will be logged out after changing your password. Please log in again with your new password.</span>
                 </p>
               </div>
 
@@ -514,8 +515,8 @@ const CustomerProfile = () => {
                   
                   {(kycStatus === 'VERIFIED' || kycStatus === 'APPROVED') && (
                     <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
-                      <p className="text-sm text-green-600 dark:text-green-400">
-                        ✅ You can now book international tour packages!
+                      <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5 font-semibold">
+                        <FaCheckCircle className="text-green-600 flex-shrink-0" /> You can now book international tour packages!
                       </p>
                     </div>
                   )}
@@ -606,8 +607,9 @@ const CustomerProfile = () => {
                   </div>
 
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                      ⚠️ Please ensure all information matches your official documents. Incorrect information may delay verification.
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-2">
+                      <FaExclamationTriangle className="text-yellow-600 mt-0.5 flex-shrink-0" />
+                      <span>Please ensure all information matches your official documents. Incorrect information may delay verification.</span>
                     </p>
                   </div>
 

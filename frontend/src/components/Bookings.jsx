@@ -3,6 +3,7 @@ import BookingDetailModal from './BookingDetailModal';
 import OperatorChatModal from './OperatorChatModal';
 import { useAuth } from '../context/AuthContext';
 import ReviewModal from './ReviewModal';
+import { FaExclamationTriangle, FaTimesCircle } from 'react-icons/fa';
 
 const Bookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -122,7 +123,7 @@ const Bookings = () => {
         {showWarning && (
           <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-3 rounded">
             <div className="flex items-start">
-              <span className="text-red-500 text-xl mr-2">⚠️</span>
+              <FaExclamationTriangle className="text-red-500 text-xl mr-2 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-semibold text-red-800">Payment Required!</p>
                 <p className="text-sm text-red-700">
@@ -141,7 +142,7 @@ const Bookings = () => {
         {isCancelledDueToNonPayment && (
           <div className="bg-red-100 border-l-4 border-red-600 p-3 mb-3 rounded">
             <div className="flex items-start">
-              <span className="text-red-600 text-xl mr-2">❌</span>
+              <FaTimesCircle className="text-red-600 text-xl mr-2 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-semibold text-red-900">Booking Cancelled</p>
                 <p className="text-sm text-red-800">{b.cancellation?.reason || 'Cancelled due to non-payment'}</p>
@@ -286,8 +287,8 @@ const Bookings = () => {
                 {/* Payment Due Section */}
                 {paymentDue.length > 0 && (
                   <div className="mb-8">
-                    <h3 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4 flex items-center">
-                      <span className="mr-2">⚠️</span> Payment Due ({paymentDue.length})
+                    <h3 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
+                      <FaExclamationTriangle className="text-red-500 flex-shrink-0" /> Payment Due ({paymentDue.length})
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {paymentDue.map(renderBookingCard)}

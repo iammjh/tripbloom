@@ -6,7 +6,7 @@ import {
   FaUsers, FaBed, FaUtensils, FaCar, FaUserTie, FaClock, 
   FaCheck, FaPlane, FaShieldAlt, FaCamera, FaHeart,
   FaChevronLeft, FaChevronRight, FaEdit, FaCompressAlt,
-  FaExclamationTriangle, FaIdCard
+  FaExclamationTriangle, FaIdCard, FaCheckCircle, FaTimesCircle
 } from 'react-icons/fa';
 
 const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }) => {
@@ -718,7 +718,7 @@ const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }
                         <div className="flex items-start gap-2 text-green-700 dark:text-green-300">
                           <FaIdCard className="mt-0.5 flex-shrink-0" />
                           <div>
-                            <p className="text-sm font-semibold">✅ KYC Verified</p>
+                            <p className="text-sm font-semibold flex items-center gap-1.5"><FaCheckCircle className="text-green-600 flex-shrink-0" /> KYC Verified</p>
                             <p className="text-xs mt-1">You're all set to book this international tour package!</p>
                           </div>
                         </div>
@@ -726,7 +726,7 @@ const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }
                         <div className="flex items-start gap-2 text-yellow-700 dark:text-yellow-300">
                           <FaExclamationTriangle className="mt-0.5 flex-shrink-0" />
                           <div>
-                            <p className="text-sm font-semibold">⏳ KYC Pending Verification</p>
+                            <p className="text-sm font-semibold flex items-center gap-1.5"><FaClock className="text-yellow-600 animate-pulse flex-shrink-0" /> KYC Pending Verification</p>
                             <p className="text-xs mt-1">Your KYC is under review. You can book once it's verified.</p>
                           </div>
                         </div>
@@ -734,7 +734,7 @@ const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }
                         <div className="flex items-start gap-2 text-red-700 dark:text-red-300">
                           <FaExclamationTriangle className="mt-0.5 flex-shrink-0" />
                           <div>
-                            <p className="text-sm font-semibold">❌ KYC Rejected</p>
+                            <p className="text-sm font-semibold flex items-center gap-1.5"><FaTimesCircle className="text-red-600 flex-shrink-0" /> KYC Rejected</p>
                             <p className="text-xs mt-1">Please resubmit your KYC in profile settings to book international tours.</p>
                           </div>
                         </div>
@@ -742,7 +742,7 @@ const TourDetailModal = ({ isOpen, onClose, packageData, userRole = 'CUSTOMER' }
                         <div className="flex items-start gap-2 text-yellow-700 dark:text-yellow-300">
                           <FaExclamationTriangle className="mt-0.5 flex-shrink-0" />
                           <div>
-                            <p className="text-sm font-semibold">⚠️ KYC Required</p>
+                            <p className="text-sm font-semibold flex items-center gap-1.5"><FaExclamationTriangle className="text-yellow-600 flex-shrink-0" /> KYC Required</p>
                             <p className="text-xs mt-1">This is an international tour. Complete KYC verification in your profile to book.</p>
                             <a href="/customer/profile" className="text-xs underline mt-1 block">Go to Profile Settings →</a>
                           </div>

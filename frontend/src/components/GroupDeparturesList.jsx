@@ -277,8 +277,8 @@ const GroupDeparturesList = ({ onViewDetails, onCreateDeparture, onEditDeparture
                       <div className="flex items-start text-red-700 dark:text-red-400">
                         <FaExclamationTriangle className="mr-2 mt-0.5" />
                         <div className="text-xs">
-                          {hasNoOperator && <div>⚠️ Departure starts soon without operator!</div>}
-                          {isOverbooked && <div>⚠️ Departure is overbooked!</div>}
+                          {hasNoOperator && <div>Departure starts soon without operator!</div>}
+                          {isOverbooked && <div>Departure is overbooked!</div>}
                         </div>
                       </div>
                     </div>
