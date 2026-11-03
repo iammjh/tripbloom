@@ -39,6 +39,9 @@ coverage/
 *.njsproj
 *.sln
 *.swp
+*.agents
+*.specify
+specs
 
 # Uploads and temporary data
 backend/uploads/
