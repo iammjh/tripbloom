@@ -322,3 +322,35 @@ test('a provider error keeps its HTTP status for the server log, without the key
     err => err.code === 'ASSISTANT_UPSTREAM_FAILED' && err.status === 404 && /does not exist/.test(err.detail) && !JSON.stringify(err).includes('gsk-secret-2'),
   );
 });
+
+test('the classifier prompt treats questions about TripBloom as in scope', async () => {
+  const bodies = [];
+  await askAssistant({ message: 'Tell me about TripBloom.', env: { ANTHROPIC_API_KEY: 'sk-x' }, fetchImpl: async (u, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ABOUT' }] }), { status: 200, headers: { 'content-type': 'application/json' } }); }, loadSnapshot: snapshot }).catch(() => {});
+  assert.match(bodies[0].system, /ABOUT: questions about TripBloom itself/);
+  assert.match(bodies[0].system, /"Tell me about TripBloom\." -> ABOUT/);
+});
+
+test('the answer prompt describes TripBloom from verified facts', () => {
+  const prompt = buildSystemPrompt({ catalogueText: 'none' });
+  assert.match(prompt, /About TripBloom/);
+  assert.match(prompt, /Silver, Gold, Platinum and Diamond/);
+  assert.match(prompt, /identity verification \(KYC\)/);
+  assert.match(prompt, /an administrator verifies it/);
+});
+
+test('the developer details contain only the approved items', () => {
+  const prompt = buildSystemPrompt({ catalogueText: 'none' });
+  assert.match(prompt, /Md\. Jahidul Hasan/);
+  assert.match(prompt, /Backend & Full-Stack Developer/);
+  assert.match(prompt, /built TripBloom/);
+  assert.match(prompt, /https:\/\/iammjh\.github\.io/);
+  assert.match(prompt, /https:\/\/github\.com\/iammjh/);
+  assert.match(prompt, /https:\/\/linkedin\.com\/in\/iammjh/);
+  assert.doesNotMatch(prompt, /@/);
+  assert.doesNotMatch(prompt, /BRAC|Ispahani|Cumilla|scholarship|thesis|Dice/i);
+});
+
+test('the assistant declines other personal details about the developer', () => {
+  const prompt = buildSystemPrompt({ catalogueText: 'none' });
+  assert.match(prompt, /other personal detail about the developer/);
+});
