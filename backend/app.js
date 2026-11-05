@@ -6,6 +6,7 @@ import { sendMessageController, getMessagesController, getBroadcastMessagesContr
 import { Review } from './model/review.model.js';
 import { TourPackage } from './model/tourPackage.model.js';
 import { getSupportContactsController, getOperatorKycStatusesController } from './controller/communication.controller.js';
+import { chatController } from './controller/assistant.controller.js';
 
 import express from 'express';
 import cors from 'cors';
@@ -82,6 +83,8 @@ const upload = multer({
 
 
 const app = express();
+// Render and similar hosts put one proxy in front of the API; trusting it makes req.ip the visitor's address (used by the assistant's rate limit).
+app.set('trust proxy', 1);
 
 
 // CORS Configuration
@@ -215,6 +218,7 @@ app.delete('/api/admin/packages/:packageId', requireRole(ROLES.ADMIN), deleteTou
 
 // Customer-facing package search/filter endpoint
 app.get('/api/packages/search', searchTourPackagesController); // Search and filter packages for customers
+app.post('/api/assistant/chat', chatController); // Customer AI assistant (public; rate-limited per client in the controller)
 app.get('/api/packages/:packageId', getPublicTourPackageController);
 
 

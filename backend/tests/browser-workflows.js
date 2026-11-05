@@ -742,6 +742,52 @@ export async function runBrowserWorkflows({ origin, temporary, customer, admin, 
     await call('Emulation.clearDeviceMetricsOverride', {});
     console.log('  Browser: tablet navigation drawer is opaque and closes with its close button.');
 
+    // Customer assistant: opens on the public landing page, answers with the unavailable message when no key is configured, closes with Escape, and is absent from admin pages.
+    await navigate('/');
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Ask TripBloom')", 'assistant launcher on landing page');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Ask TripBloom').click(); })()");
+    await wait("Boolean(document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]'))", 'assistant panel opens');
+    await fill('input[aria-label="Your question"]', 'Packages for two under 25000 BDT');
+    await evaluate("(() => { [...document.querySelectorAll('button[aria-label=\"Send\"]')].find(b => !b.disabled).click(); })()");
+    await wait("[...document.querySelectorAll('[role=\"dialog\"][aria-label=\"TripBloom assistant\"] [role=\"alert\"]')].some(a => a.textContent.includes('unavailable'))", 'assistant reports unavailable without a key');
+    if (saveShot) await saveShot('assistant-panel.png');
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await wait("!document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]')", 'assistant closes with Escape');
+    console.log('  Browser: customer assistant opens on the landing page, reports unavailable without a key, and closes with Escape.');
+    // The panel must fit a 375px phone screen.
+    await call('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    await pause(600);
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Ask TripBloom').click(); })()");
+    await wait("Boolean(document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]'))", 'assistant panel on phone');
+    const phoneFit = await evaluate("(() => { const r = document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]').getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), width: document.documentElement.clientWidth, overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()");
+    assert.ok(phoneFit.left >= 0 && phoneFit.right <= phoneFit.width + 1 && phoneFit.overflow <= 0, 'Assistant panel must fit a 375px screen: ' + JSON.stringify(phoneFit));
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Emulation.clearDeviceMetricsOverride', {});
+    console.log('  Browser: assistant panel fits a 375px phone screen without page overflow.');
+
+    await navigate('/admin/activity-logs');
+    await wait("Boolean(document.querySelector('button[aria-label=\"Toggle navigation\"], aside[aria-label=\"Admin navigation\"]'))", 'admin shell rendered');
+    const assistantOnAdmin = await evaluate("Boolean(document.querySelector('[aria-label=\"TripBloom assistant\"]')) || [...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Ask TripBloom')");
+    assert.equal(assistantOnAdmin, false, 'The customer assistant must not appear on admin pages');
+    console.log('  Browser: the customer assistant is not shown on admin pages.');
+
+    // Liquid glass check: the panel stays translucent over scrolled page content and remains readable.
+    await navigate('/');
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Ask TripBloom')", 'launcher for liquid glass check');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Ask TripBloom').click(); })()");
+    await wait("Boolean(document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]'))", 'panel for liquid glass check');
+    await evaluate("window.scrollTo(0, 900)");
+    await pause(500);
+    const glassStyle = await evaluate("(() => { const s = getComputedStyle(document.querySelector('[role=\"dialog\"][aria-label=\"TripBloom assistant\"]')); return { blur: s.backdropFilter || s.webkitBackdropFilter || '', background: s.backgroundColor }; })()");
+    assert.ok(/blur/.test(glassStyle.blur), 'Assistant panel must blur the content behind it, got ' + JSON.stringify(glassStyle));
+    if (saveShot) await saveShot('assistant-liquid.png');
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await evaluate("window.scrollTo(0, 0)");
+    console.log('  Browser: assistant panel blurs the page content behind it when the page is scrolled.');
+
   } finally {
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error('Browser session closed.')); }
     pending.clear(); socket.close();

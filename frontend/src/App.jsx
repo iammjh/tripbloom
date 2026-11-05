@@ -25,6 +25,7 @@ import SettingsManager from './components/SettingsManager';
 import Reviews from './components/Reviews';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
+import AssistantLayout from './components/AssistantLayout.jsx';
 import AdminDashboard from './components/AdminDashboard';
 import AdminLayout from './components/AdminLayout';
 import AdminContacts from './components/AdminContacts';
@@ -46,6 +47,7 @@ import AdminKYCManager from './components/AdminKYCManager';
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
+      <Route element={<AssistantLayout />}>
       <Route path="/" element={
         <LandingTheme><div className="App mesh-bg transition-colors duration-300">
           <Navbar />
@@ -60,26 +62,6 @@ const router = createBrowserRouter(
           <Footer />
         </div></LandingTheme>
       } />
-      <Route path="/admin" element={
-        <ProtectedRoute role="admin">
-          <AdminLayout />
-        </ProtectedRoute>
-      }>
-        <Route index element={<AdminDashboard />} />
-        <Route path="contacts" element={<AdminContacts />} />
-        <Route path="departures" element={<GroupDeparturesManager />} />
-        <Route path="operators" element={<OperatorsManager />} />
-        <Route path="packages" element={<TourPackagesManager />} />
-        <Route path="users" element={<UsersManager />} />
-        <Route path="payments" element={<PaymentsManager />} />
-        <Route path="refunds" element={<RefundsManager />} />
-        <Route path="date-changes" element={<DateChangeRequestsManager />} />
-        <Route path="kyc" element={<AdminKYCManager />} />
-        <Route path="reviews" element={<ReviewsManager />} />
-        <Route path="settings" element={<SettingsManager />} />
-        <Route path="activity-logs" element={<ActivityLogsViewer />} />
-        <Route path="announcements" element={<AnnouncementsManager />} />
-      </Route>
       <Route path="/customer" element={
         <ProtectedRoute role="customer">
           <CustomerDashboard />
@@ -100,13 +82,34 @@ const router = createBrowserRouter(
           <CustomerProfile />
         </ProtectedRoute>
       } />
+      <Route path="/packages" element={<BrowsePackages />} />
+      <Route path="/browse-packages" element={<BrowsePackages />} />
+      </Route>
+      <Route path="/admin" element={
+        <ProtectedRoute role="admin">
+          <AdminLayout />
+        </ProtectedRoute>
+      }>
+        <Route index element={<AdminDashboard />} />
+        <Route path="contacts" element={<AdminContacts />} />
+        <Route path="departures" element={<GroupDeparturesManager />} />
+        <Route path="operators" element={<OperatorsManager />} />
+        <Route path="packages" element={<TourPackagesManager />} />
+        <Route path="users" element={<UsersManager />} />
+        <Route path="payments" element={<PaymentsManager />} />
+        <Route path="refunds" element={<RefundsManager />} />
+        <Route path="date-changes" element={<DateChangeRequestsManager />} />
+        <Route path="kyc" element={<AdminKYCManager />} />
+        <Route path="reviews" element={<ReviewsManager />} />
+        <Route path="settings" element={<SettingsManager />} />
+        <Route path="activity-logs" element={<ActivityLogsViewer />} />
+        <Route path="announcements" element={<AnnouncementsManager />} />
+      </Route>
       <Route path="/operator" element={
         <ProtectedRoute role="operator">
           <OperatorDashboard />
         </ProtectedRoute>
       } />
-      <Route path="/packages" element={<BrowsePackages />} />
-      <Route path="/browse-packages" element={<BrowsePackages />} />
     </>
   ),
   {
