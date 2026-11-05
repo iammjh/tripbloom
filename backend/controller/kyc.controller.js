@@ -7,6 +7,8 @@ import {
 import { sendMessage } from "../service/message.service.js";
 import { User } from "../model/user.model.js";
 import { logActivity } from "../service/activityLog.service.js";
+import { hasExpectedSignature } from "../service/fileSignature.js";
+import { unlink } from "node:fs/promises";
 
 export const submitKYCController = async (req, res) => {
   try {
@@ -14,6 +16,14 @@ export const submitKYCController = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Document image is required"
+      });
+    }
+    // The file must actually be the type its name claims; otherwise it is deleted before anything is recorded.
+    if (!(await hasExpectedSignature(req.file.path, req.file.originalname))) {
+      await unlink(req.file.path).catch(() => {});
+      return res.status(400).json({
+        success: false,
+        message: "The document must be a real JPEG, PNG or PDF file."
       });
     }
 
@@ -32,7 +42,7 @@ export const submitKYCController = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: err.message
+      message: 'We could not complete this request. Please try again.'
     });
   }
 };
@@ -48,7 +58,7 @@ export const getMyKYCController = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: err.message
+      message: 'We could not complete this request. Please try again.'
     });
   }
 };
@@ -106,7 +116,7 @@ export const verifyKYCController = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: err.message
+      message: 'We could not complete this request. Please try again.'
     });
   }
 };
@@ -123,7 +133,7 @@ export const getAllKYCController = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: err.message
+      message: 'We could not complete this request. Please try again.'
     });
   }
 };

@@ -65,19 +65,34 @@ const Footer = () => {
           </nav>
         </div>
 
-        <div className="mt-10 flex flex-col-reverse items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
+        {/* Three columns on larger screens, all top-aligned, so the credit sits on the same line as the copyright text. */}
+        <div className="mt-10 flex flex-col items-center gap-4 border-t border-white/10 pt-6 sm:grid sm:grid-cols-3 sm:items-start sm:gap-6">
           <div className="text-center text-xs text-text-muted sm:text-left">
             <p>© {year} TripBloom. All rights reserved.</p>
             <p className="mt-1">Powered by Best CSE University's student</p>
           </div>
-          <button
-            type="button"
-            onClick={backToTop}
-            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 text-sm font-medium text-text transition-colors hover:bg-white/10"
-          >
-            <LuArrowUp aria-hidden="true" className="h-4 w-4" />
-            Back to top
-          </button>
+          {/* Aligned to the bottom of the row, so it sits on the same line as "Powered by ... CSE University's student". */}
+          <p className="text-center text-xs text-text-muted sm:self-end">
+            Developed by{' '}
+            <a
+              href="https://iammjh.github.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-text underline-offset-4 hover:underline"
+            >
+              iammjh
+            </a>
+          </p>
+          <div className="flex justify-center sm:justify-end">
+            <button
+              type="button"
+              onClick={backToTop}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 text-sm font-medium text-text transition-colors hover:bg-white/10"
+            >
+              <LuArrowUp aria-hidden="true" className="h-4 w-4" />
+              Back to top
+            </button>
+          </div>
         </div>
       </div>
     </footer>

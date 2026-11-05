@@ -12,13 +12,16 @@
     "test:workflows": "node --test tests/*workflows.test.js",
     "test:integration": "node tests/integration-workflows.js",
     "test:browser": "RUN_BROWSER_TESTS=1 node tests/integration-workflows.js",
-    "backfill:booking-codes": "node scripts/backfill-booking-codes.js"
+    "backfill:booking-codes": "node scripts/backfill-booking-codes.js",
+    "report:legacy-passwords": "node scripts/legacy-password-report.js"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "multer": "^2.0.2",
@@ -27,5 +30,9 @@
   "devDependencies": {
     "mongodb-memory-server": "^8.12.1",
     "nodemon": "^3.0.2"
+  },
+  "overrides": {
+    "qs": "^6.16.2",
+    "uuid": "^11.1.1"
   }
 }

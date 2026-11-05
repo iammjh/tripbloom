@@ -34,7 +34,7 @@ const AuthModal = ({ isOpen, onClose }) => {
       try {
         const res = await apiClient.post('/login', {
           email: formData.email,
-          passwordHash: formData.password
+          password: formData.password
         });
         if (res.data.token) {
           localStorage.setItem('token', res.data.token);
@@ -89,7 +89,7 @@ const AuthModal = ({ isOpen, onClose }) => {
           fullName: formData.fullName,
           email: formData.email,
           phone: formData.phone,
-          passwordHash: formData.password,
+          password: formData.password,
           roles: formData.roles
         });
         setMessage(res.data.message || 'Signup successful!');
@@ -223,7 +223,9 @@ const AuthModal = ({ isOpen, onClose }) => {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  placeholder="Enter your password"
+                  placeholder={isLogin ? 'Enter your password' : 'At least 8 characters'}
+                  minLength={isLogin ? undefined : 8}
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-all"
                   required
                 />

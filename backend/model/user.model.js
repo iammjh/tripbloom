@@ -19,6 +19,8 @@ const userSchema = new mongoose.Schema({
     default: 'AVAILABLE'
   },
   passwordHash: { type: String, required: true },
+  // Raised on each password change; sessions issued with an older value are rejected.
+  tokenVersion: { type: Number, default: 0 },
   roles: {
     type: [String],
     enum: ['ADMIN', 'admin', 'CUSTOMER', 'customer', 'TOUR_OPERATOR', 'tour_operator'],

@@ -3,6 +3,9 @@ import { Review } from '../model/review.model.js';
 import Booking from '../model/booking.model.js';
 import { TourPackage } from '../model/tourPackage.model.js';
 
+// Lists return the newest items up to this count, so one request cannot load a whole collection.
+export const MAX_LIST_ITEMS = 200;
+
 // Create a new review
 export async function createReview({ customerId, packageId, bookingId, rating, comment }) {
   try {
@@ -114,7 +117,8 @@ export async function listReviews({ packageId, customerId, status, minRating, ma
       .populate('customerId', 'fullName email')
       .populate('packageId', 'title destination type category')
       .populate('bookingId', 'startDate endDate status')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(MAX_LIST_ITEMS);
 
     return { reviews };
   } catch (err) {

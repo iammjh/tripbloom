@@ -160,8 +160,8 @@ const CustomerProfile = () => {
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+    if (passwordData.newPassword.length < 8) {
+      setError('New password must be at least 8 characters');
       setLoading(false);
       return;
     }
@@ -386,7 +386,7 @@ const CustomerProfile = () => {
                 />
               </FormField>
 
-              <FormField id="password-new" label="New password" hint="At least 6 characters." required>
+              <FormField id="password-new" label="New password" hint="At least 8 characters." required>
                 <input
                   id="password-new"
                   type="password"
@@ -395,7 +395,7 @@ const CustomerProfile = () => {
                   onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                   className={inputClass}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </FormField>
 

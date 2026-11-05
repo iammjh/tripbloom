@@ -1,327 +1,192 @@
-import { LuCalendar, LuDollarSign, LuMail, LuMap, LuPhone, LuSave, LuTriangleAlert, LuUser, LuUsers, LuX } from 'react-icons/lu';
-import { notify } from '../utils/notifyStore.js';
-import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useState } from 'react';
+import { LuMail, LuPhone, LuSave, LuTriangleAlert, LuUsers } from 'react-icons/lu';
+import Badge from '../components/ui/Badge.jsx';
+import Button from '../components/ui/Button.jsx';
+import FormField, { inputClass } from '../components/ui/FormField.jsx';
+import Modal from '../components/ui/Modal.jsx';
+import { saveOperatorNotes } from '../api/bookingOperations.js';
+import { bookingLabel } from '../utils/bookingCode.js';
+import { paymentTotals } from '../utils/paymentAccounting.js';
+import { notify } from '../utils/notifyStore.js';
 
-import { saveOperatorNotes } from '../api/bookingOperations';
+const STATUS_TONE = { PENDING: 'warning', CONFIRMED: 'success', COMPLETED: 'info', CANCELLED: 'danger', REFUNDED: 'neutral' };
+const PAYMENT_TONE = { SUCCESS: 'success', PENDING: 'warning', FAILED: 'danger', REJECTED: 'danger' };
+const NOTES_LIMIT = 5000;
 
+const money = value => `৳${Number(value || 0).toLocaleString('en-US')}`;
+const dateOnly = value => (value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
+
+function Field({ label, children }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{label}</p>
+      <div className="mt-1 text-sm text-text">{children}</div>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone = 'text-text' }) {
+  return (
+    <div className="rounded-xl bg-surface-muted/60 p-3">
+      <p className="text-xs text-text-muted">{label}</p>
+      <p className={`font-display text-lg font-semibold ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+// Booking details for an operator. Prices and payment status are read-only here; the operator can write notes.
 const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
-  const [operatorNotes, setOperatorNotes] = useState(booking.operatorNotes || '');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
+  const [notes, setNotes] = useState(booking.operatorNotes || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const getTotalPaid = () => {
-    return (booking.payments || [])
-      .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
-      .reduce((sum, p) => sum + p.amount, 0);
-  };
+  const totals = paymentTotals(booking);
+  const cancelledAfterStart = Boolean(booking.cancellation?.isCancelled)
+    && new Date(booking.cancellation.cancelledAt) > new Date(booking.startDate);
+  const customer = booking.customerId && typeof booking.customerId === 'object' ? booking.customerId : {};
+  const customerName = customer.fullName || booking.customerName || 'Customer';
+  const customerEmail = customer.email || booking.customerEmail || '';
+  const customerPhone = customer.phone || booking.customerPhone || '';
+  const travelers = booking.travelers || [];
+  const payments = booking.payments || [];
+  const unchanged = notes === (booking.operatorNotes || '');
 
-  const remaining = paymentTotals(booking).remaining;
-
-  const handleSaveNotes = async () => {
-    setIsSaving(true);
-    setSaveError('');
+  const saveNotes = async () => {
+    if (saving || cancelledAfterStart || unchanged) return;
+    setSaving(true);
+    setError('');
     try {
-      const saved = await saveOperatorNotes(booking._id, operatorNotes);
-      setOperatorNotes(saved.operatorNotes);
-      onUpdateNotes(saved.operatorNotes);
-      notify.message('Notes saved successfully!');
-    } catch (error) {
-      setSaveError(error.message || 'Could not save notes. Please try again.');
+      const saved = await saveOperatorNotes(booking._id, notes);
+      const value = saved.operatorNotes ?? notes;
+      setNotes(value);
+      onUpdateNotes(value);
+      notify.message('Notes saved.');
+    } catch (failure) {
+      setError(failure.message || 'Could not save notes. Please try again.');
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  const wasCancelledAfterStart = booking.cancellation?.isCancelled && 
-    new Date(booking.cancellation.cancelledAt) > new Date(booking.startDate);
+  const footer = <Button variant="ghost" onClick={onClose}>Close</Button>;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-orange-700 text-white p-6 rounded-t-2xl">
-          <div className="flex justify-between items-start">
-            <div>
-              <h2 className="text-2xl font-bold mb-2">Booking Details</h2>
-              <p className="text-orange-100">ID: {booking._id}</p>
-            </div>
-            <button 
-              aria-label="Close" 
-              onClick={onClose}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
-            >
-              <LuX aria-hidden="true" className="text-2xl" />
-            </button>
-          </div>
-        </div>
-
-        {/* Warning if cancelled after start */}
-        {wasCancelledAfterStart && (
-          <div className="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded">
-            <div className="flex items-start">
-              <LuTriangleAlert aria-hidden="true" className="text-red-600 mt-1 mr-3" />
-              <div>
-                <h4 className="font-bold text-red-800 dark:text-red-300">Booking Cancelled After Tour Start</h4>
-                <p className="text-sm text-red-700 dark:text-red-400">
-                  This booking was cancelled after the tour started. No modifications allowed.
-                </p>
-              </div>
-            </div>
+    <Modal
+      open
+      onClose={onClose}
+      title={`Booking ${bookingLabel(booking)}`}
+      description={booking.packageId?.title || 'Booking details'}
+      size="lg"
+      footer={footer}
+      rootClassName="dark"
+    >
+      <div className="space-y-5">
+        {cancelledAfterStart && (
+          <div role="status" className="flex gap-3 rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+            <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none" />
+            <p>This booking was cancelled after the tour started. Its notes can no longer be changed.</p>
           </div>
         )}
 
-        <div className="p-6 space-y-6">
-          {/* Customer Details */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <LuUser aria-hidden="true" className="mr-3 text-orange-600" />
-              Customer Information
-            </h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(() => {
-                // Resolve customer display values from possible shapes
-                const cust = booking.customerId || booking.customer || {};
-                const customerName = cust?.fullName || cust?.name || booking.customerName || (typeof cust === 'string' ? cust : null) || 'Customer';
-                const customerEmail = cust?.email || booking.customerEmail || '';
-                const customerPhone = cust?.phone || booking.customerPhone || '';
+        <div className="grid gap-4 md:grid-cols-2">
+          <section aria-labelledby="customer-heading" className="glass space-y-3 rounded-2xl p-4">
+            <h3 id="customer-heading" className="font-display text-base font-semibold text-text">Customer</h3>
+            <Field label="Name">{customerName}</Field>
+            <Field label="Phone">
+              {customerPhone
+                ? <a href={`tel:${customerPhone}`} className="inline-flex items-center gap-1.5 text-brand hover:underline"><LuPhone aria-hidden="true" className="h-3.5 w-3.5" />{customerPhone}</a>
+                : '—'}
+            </Field>
+            <Field label="Email">
+              {customerEmail
+                ? <a href={`mailto:${customerEmail}`} className="inline-flex items-center gap-1.5 break-all text-brand hover:underline"><LuMail aria-hidden="true" className="h-3.5 w-3.5 flex-none" />{customerEmail}</a>
+                : '—'}
+            </Field>
+          </section>
 
-                return (
-                  <>
-                    <div>
-                      <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Name</label>
-                      <p className="text-gray-900 dark:text-white font-semibold">{customerName}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Email</label>
-                      <p className="text-gray-900 dark:text-white">{customerEmail}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Phone</label>
-                      <p className="text-gray-900 dark:text-white">{customerPhone}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Booking Type</label>
-                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
-                        booking.bookingType === 'GROUP'
-                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                          : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                      }`}>
-                        {booking.bookingType}
-                      </span>
-                    </div>
-                  </>
-                );
-              })()}
-              
-            </div>
-          </div>
+          <section aria-labelledby="trip-heading" className="glass space-y-3 rounded-2xl p-4">
+            <h3 id="trip-heading" className="font-display text-base font-semibold text-text">Trip</h3>
+            <Field label="Package">
+              {booking.packageId?.title || 'Tour'}
+              {booking.packageId?.destination && <span className="block text-text-muted">{booking.packageId.destination}</span>}
+            </Field>
+            <Field label="Dates">{dateOnly(booking.startDate)} – {dateOnly(booking.endDate)}</Field>
+            <Field label="Booking type">{booking.bookingType === 'GROUP' ? 'Group' : 'Private'}</Field>
+            <Field label="Status"><Badge tone={STATUS_TONE[booking.status] || 'neutral'}>{booking.status || 'Unknown'}</Badge></Field>
+          </section>
+        </div>
 
-          {/* Package & Dates */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <LuMap aria-hidden="true" className="mr-3 text-orange-600" />
-              Package & Travel Details
-            </h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Package</label>
-                <p className="text-gray-900 dark:text-white font-semibold">{booking.packageId?.title}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{booking.packageId?.destination}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Tour Dates</label>
-                <p className="text-gray-900 dark:text-white">
-                  {new Date(booking.startDate).toLocaleDateString()} - {new Date(booking.endDate).toLocaleDateString()}
-                </p>
-              </div>
-              {booking.bookingType === 'GROUP' && booking.groupDepartureId && (
-                <div className="md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Group Departure</label>
-                  <button className="mt-1 text-orange-600 hover:text-orange-700 font-semibold">
-                    View Departure Details →
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Travelers List */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <LuUsers aria-hidden="true" className="mr-3 text-orange-600" />
-              Travelers ({booking.numTravelers})
-            </h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-300 dark:border-gray-600">
-                    <th className="text-left py-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Name</th>
-                    <th className="text-left py-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Age</th>
-                    <th className="text-left py-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Phone</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {booking.travelers?.map((traveler, idx) => (
-                    <tr key={idx} className="border-b border-gray-200 dark:border-gray-600 last:border-b-0">
-                      <td className="py-2 text-gray-900 dark:text-white">{traveler.fullName}</td>
-                      <td className="py-2 text-gray-900 dark:text-white">{traveler.age}</td>
-                      <td className="py-2 text-gray-900 dark:text-white">{traveler.phone || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Payment Summary (Read-only) */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <LuDollarSign aria-hidden="true" className="mr-3 text-orange-600" />
-              Payment Summary (Read-only)
-            </h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                  <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Total Amount</label>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">৳{booking.totalAmount.toLocaleString()}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Total Paid</label>
-                  <p className="text-2xl font-bold text-green-600">৳{getTotalPaid().toLocaleString()}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Remaining</label>
-                  <p className={`text-2xl font-bold ${remaining > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    ৳{remaining.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
-              {/* Payment History */}
-              {booking.payments && booking.payments.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Payment History</h4>
-                  <div className="space-y-2">
-                    {booking.payments.map((payment, idx) => (
-                      <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-lg">
-                        <div>
-                          <span className="font-semibold text-gray-900 dark:text-white">৳{payment.amount.toLocaleString()}</span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">via {payment.method}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {payment.paidAt && (
-                            <span className="text-xs text-gray-500">{new Date(payment.paidAt).toLocaleDateString()}</span>
-                          )}
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            payment.status === 'SUCCESS' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-                            payment.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                            'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-                          }`}>
-                            {payment.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <p className="text-sm text-blue-800 dark:text-blue-300">
-                  ℹ️ <strong>Note:</strong> You cannot change price or payment status. Contact admin for payment modifications.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {booking.customizations && (
-            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-white">Customer preferences</h3>
-              <p className="mt-2 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{booking.customizations}</p>
-            </div>
+        <section aria-labelledby="travelers-heading" className="glass rounded-2xl p-4">
+          <h3 id="travelers-heading" className="mb-3 flex items-center gap-2 font-display text-base font-semibold text-text">
+            <LuUsers aria-hidden="true" className="h-4 w-4 text-brand" />Travellers ({booking.numTravelers ?? travelers.length})
+          </h3>
+          {travelers.length === 0 ? (
+            <p className="text-sm text-text-muted">No travellers are listed on this booking.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {travelers.map((traveler, index) => (
+                <li key={index} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-semibold text-text">{traveler.fullName || 'Traveller'}</span>
+                  <span className="text-text-muted">{[traveler.age ? `Age ${traveler.age}` : '', traveler.phone || ''].filter(Boolean).join(' · ') || '—'}</span>
+                </li>
+              ))}
+            </ul>
           )}
+        </section>
 
-          {/* Operator Notes */}
+        <section aria-labelledby="payments-heading" className="glass space-y-4 rounded-2xl p-4">
           <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <LuSave aria-hidden="true" className="mr-3 text-orange-600" />
-              Operator Notes
-            </h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
-              <textarea
-                value={operatorNotes}
-                onChange={(e) => setOperatorNotes(e.target.value)}
-                placeholder="Add notes about this booking (e.g., special requests, dietary requirements, etc.)"
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                rows="4"
-                maxLength={5000}
-                disabled={wasCancelledAfterStart}
-              />
-              {saveError && <p role="alert" className="mt-2 text-sm text-red-600">{saveError}</p>}
-              <div className="mt-3 flex justify-between items-center">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Example: "Customer requested vegetarian meals for all travelers"
-                </p>
-                <button 
-                  onClick={handleSaveNotes}
-                  disabled={isSaving || wasCancelledAfterStart}
-                  className="flex items-center px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <LuSave aria-hidden="true" className="mr-2" />
-                  {isSaving ? 'Saving...' : 'Save Notes'}
-                </button>
-              </div>
-            </div>
+            <h3 id="payments-heading" className="font-display text-base font-semibold text-text">Payments</h3>
+            <p className="text-xs text-text-muted">Read-only. An administrator changes prices and payment status.</p>
           </div>
-
-          {/* Status & Metadata */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Booking Status</h3>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Current Status</label>
-                <p className={`inline-block px-4 py-2 mt-1 rounded-full font-semibold ${
-                  booking.status === 'CONFIRMED' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-                  booking.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                  booking.status === 'CANCELLED' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' :
-                  'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                }`}>
-                  {booking.status}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Booked On</label>
-                <p className="text-gray-900 dark:text-white">{new Date(booking.createdAt).toLocaleString()}</p>
-              </div>
-              {booking.cancellation?.isCancelled && (
-                <>
-                  <div>
-                    <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Cancellation Reason</label>
-                    <p className="text-gray-900 dark:text-white">{booking.cancellation.reason || 'Not provided'}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Refund Amount</label>
-                    <p className="text-gray-900 dark:text-white">৳{booking.cancellation.refundAmount?.toLocaleString() || 0}</p>
-                  </div>
-                </>
-              )}
-            </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Total" value={money(booking.finalAmount ?? booking.totalAmount)} />
+            <Stat label="Paid" value={money(totals.gross)} tone="text-success" />
+            <Stat label="Pending" value={money(totals.pending)} />
+            <Stat label="Remaining" value={money(totals.remaining)} tone={totals.remaining > 0 ? 'text-warning' : 'text-text'} />
           </div>
-        </div>
+          {payments.length > 0 && (
+            <ul className="divide-y divide-border">
+              {payments.map((payment, index) => (
+                <li key={payment._id || index} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="text-text"><span className="font-semibold">{money(payment.amount)}</span> <span className="text-text-muted">via {payment.method || 'unknown'}</span></span>
+                  <span className="flex items-center gap-2 text-xs text-text-muted">
+                    {payment.paidAt && dateOnly(payment.paidAt)}
+                    <Badge tone={PAYMENT_TONE[payment.status] || 'neutral'}>{payment.status}</Badge>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-100 dark:bg-gray-900 p-6 rounded-b-2xl flex justify-end gap-3">
-          <button 
-            aria-label="Close" 
-            onClick={onClose}
-            className="px-6 py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold transition-colors"
-          >
-            Close
-          </button>
-        </div>
+        {booking.customizations && (
+          <section aria-labelledby="preferences-heading" className="glass rounded-2xl p-4">
+            <h3 id="preferences-heading" className="font-display text-base font-semibold text-text">Customer preferences</h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-text">{booking.customizations}</p>
+          </section>
+        )}
+
+        <section aria-labelledby="notes-heading" className="glass space-y-3 rounded-2xl p-4">
+          <h3 id="notes-heading" className="font-display text-base font-semibold text-text">Operator notes</h3>
+          <FormField id="operator-notes" label="Notes for this booking" hint="Special requests, dietary needs and anything the guide should know." error={error || undefined}>
+            <textarea
+              id="operator-notes"
+              rows={4}
+              maxLength={NOTES_LIMIT}
+              value={notes}
+              onChange={event => setNotes(event.target.value)}
+              disabled={cancelledAfterStart || saving}
+              className={inputClass}
+            />
+          </FormField>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs text-text-muted">{notes.length} / {NOTES_LIMIT}</span>
+            <Button icon={LuSave} onClick={saveNotes} loading={saving} disabled={cancelledAfterStart || unchanged}>Save notes</Button>
+          </div>
+        </section>
       </div>
-    </div>
+    </Modal>
   );
 };
 

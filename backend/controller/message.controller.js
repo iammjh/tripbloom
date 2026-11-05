@@ -3,7 +3,12 @@ import { sendMessage } from '../service/message.service.js';
 import { isAdmin, userId, bookingParticipants, requireBookingAccess, requireDepartureAccess, requireSupportPair } from '../service/access.service.js';
 import { domainError } from '../service/reservation.service.js';
 const involved = actor => ({ $or: [{ senderId: actor.id }, { recipientId: actor.id }] });
-const load = query => Message.find(query).sort({ sentAt: 1 }).populate('senderId', 'fullName').populate('recipientId', 'fullName');
+// The newest messages of a thread, oldest first. Long threads show their latest part instead of loading everything.
+const MAX_THREAD_MESSAGES = 200;
+const load = async query => {
+  const newest = await Message.find(query).sort({ sentAt: -1 }).limit(MAX_THREAD_MESSAGES).populate('senderId', 'fullName').populate('recipientId', 'fullName');
+  return newest.reverse();
+};
 const endpoint = fn => async (req, res) => {
  try { await fn(req, res); }
  catch (error) { res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to process messages.' }); }

@@ -1,336 +1,219 @@
-import { LuCalendar, LuCircleCheck, LuClipboardList, LuFileText, LuPencil, LuPlus, LuTrash2, LuUpload } from 'react-icons/lu';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LuCalendarDays, LuClipboardList, LuPlus, LuSave, LuTrash2 } from 'react-icons/lu';
+import Badge from '../components/ui/Badge.jsx';
+import Button from '../components/ui/Button.jsx';
+import EmptyState from '../components/ui/EmptyState.jsx';
+import ErrorState from '../components/ui/ErrorState.jsx';
+import { inputClass } from '../components/ui/FormField.jsx';
+import IconButton from '../components/ui/IconButton.jsx';
+import Skeleton from '../components/ui/Skeleton.jsx';
 import { confirmAction } from '../utils/confirmStore.js';
-import React, { useState, useEffect, useRef } from 'react';
+import { addDay, addStop, itineraryErrors, removeStop, sameItinerary, updateStop } from '../utils/operatorItinerary.js';
 import { toEditorItinerary, toStoredItinerary } from './departureState';
 
+const longDate = value => new Date(value).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
+// Day-by-day itinerary for the operator's upcoming departures. Saves replace the departure's itinerary.
 const ItinerariesManager = () => {
   const operatorId = localStorage.getItem('userId');
   const [departures, setDepartures] = useState([]);
-  const [selectedDeparture, setSelectedDeparture] = useState(null);
-  const [itinerary, setItinerary] = useState({ days: [] });
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [saveMessage, setSaveMessage] = useState('');
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [editor, setEditor] = useState({ days: [] });
   const [loadingItinerary, setLoadingItinerary] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState({ tone: '', message: '' });
   const loadRequest = useRef(0);
 
-  useEffect(() => {
-    fetchDepartures();
-  }, []);
-
-  const fetchDepartures = async () => {
+  const loadDepartures = useCallback(async () => {
+    setListLoading(true);
+    setListError('');
     try {
       const res = await fetch(`/api/operator/${operatorId}/dashboard`);
-      if (!res.ok) throw new Error('Failed to fetch');
+      if (!res.ok) throw new Error(`Departures request failed with status ${res.status}`);
       const data = await res.json();
-      
-      // Filter upcoming departures
-      const upcoming = (data.groupDepartures || []).filter(dep => 
-        new Date(dep.startDate) > new Date()
-      );
+      const upcoming = (data.groupDepartures || [])
+        .filter(dep => new Date(dep.startDate) > new Date())
+        .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
       setDepartures(upcoming);
-    } catch (error) {
-      console.error('Error:', error);
+    } catch (failure) {
+      console.error('Error loading departures for the itinerary:', failure);
+      setListError('Your upcoming departures could not be loaded right now.');
+    } finally {
+      setListLoading(false);
     }
-  };
+  }, [operatorId]);
 
-  const loadItinerary = async departure => {
+  useEffect(() => { loadDepartures(); }, [loadDepartures]);
+
+  const savedStored = useMemo(
+    () => (selected ? toStoredItinerary(toEditorItinerary(selected.itinerary || [], selected.startDate)) : null),
+    [selected]
+  );
+  const dirty = Boolean(selected) && !sameItinerary(toStoredItinerary(editor), savedStored);
+
+  const openDeparture = async departure => {
     const requestId = ++loadRequest.current;
-    setSaveError(''); setSaveMessage(''); setUploadedFiles([]);
-    setSelectedDeparture(null);
+    setStatus({ tone: '', message: '' });
+    setSelected(null);
     setLoadingItinerary(true);
     try {
       const res = await fetch(`/api/admin/group-departures/${departure._id}`);
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to load itinerary.');
+      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to load the itinerary.');
       if (requestId !== loadRequest.current) return;
-      setSelectedDeparture(data.departure);
-      setItinerary(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
-    } catch (error) {
-      if (requestId === loadRequest.current) setSaveError(error.message);
+      setSelected(data.departure);
+      setEditor(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
+    } catch (failure) {
+      if (requestId === loadRequest.current) setStatus({ tone: 'error', message: failure.message });
     } finally {
       if (requestId === loadRequest.current) setLoadingItinerary(false);
     }
   };
 
-  const addDay = () => {
-    const newDay = {
-      dayNumber: itinerary.days.length + 1,
-      date: new Date(),
-      activities: []
-    };
-    setItinerary({ ...itinerary, days: [...itinerary.days, newDay] });
-  };
-
-  const addActivity = (dayIndex) => {
-    const newActivity = { time: '09:00', name: '', location: '', notes: '' };
-    const updatedDays = [...itinerary.days];
-    updatedDays[dayIndex].activities.push(newActivity);
-    setItinerary({ ...itinerary, days: updatedDays });
-  };
-
-  const updateActivity = (dayIndex, activityIndex, field, value) => {
-    const updatedDays = [...itinerary.days];
-    updatedDays[dayIndex].activities[activityIndex][field] = value;
-    setItinerary({ ...itinerary, days: updatedDays });
-  };
-
-  const removeActivity = (dayIndex, activityIndex) => {
-    const updatedDays = [...itinerary.days];
-    updatedDays[dayIndex].activities.splice(activityIndex, 1);
-    setItinerary({ ...itinerary, days: updatedDays });
-  };
-
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files);
-    const newFiles = files.map(file => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      size: file.size,
-      uploadedAt: new Date()
-    }));
-    setUploadedFiles([...uploadedFiles, ...newFiles]);
-  };
-
-  const removeFile = (fileId) => {
-    setUploadedFiles(uploadedFiles.filter(f => f.id !== fileId));
-  };
-
   const saveItinerary = async () => {
-    if (!selectedDeparture || saving || !(await confirmAction({ message: 'Save this itinerary?' }))) return;
-    setSaving(true); setSaveError(''); setSaveMessage('');
+    if (!selected || saving || !dirty) return;
+    const problems = itineraryErrors(editor);
+    if (problems.length) { setStatus({ tone: 'error', message: problems[0] }); return; }
+    if (!(await confirmAction({ message: 'Save this itinerary for the departure?' }))) return;
+    setSaving(true);
+    setStatus({ tone: '', message: '' });
     try {
-      const res = await fetch(`/api/admin/group-departures/${selectedDeparture._id}`, {
+      const res = await fetch(`/api/admin/group-departures/${selected._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itinerary: toStoredItinerary(itinerary) })
+        body: JSON.stringify({ itinerary: toStoredItinerary(editor) })
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to save itinerary.');
-      setSelectedDeparture(data.departure);
-      setDepartures(previous => previous.map(item => item._id === data.departure._id ? data.departure : item));
-      setItinerary(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
-      setSaveMessage('Itinerary saved successfully.');
-    } catch (error) { setSaveError(error.message || 'Unable to save itinerary.'); }
-    finally { setSaving(false); }
+      if (!res.ok || !data.success || !data.departure) throw new Error(data.message || 'Unable to save the itinerary.');
+      setSelected(current => ({ ...current, ...data.departure }));
+      setDepartures(previous => previous.map(item => (item._id === data.departure._id ? { ...item, ...data.departure } : item)));
+      setEditor(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
+      setStatus({ tone: 'success', message: 'Itinerary saved.' });
+    } catch (failure) {
+      setStatus({ tone: 'error', message: failure.message || 'Unable to save the itinerary.' });
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const inputFor = (label, value, onChange, props = {}) => (
+    <input aria-label={label} value={value} onChange={event => onChange(event.target.value)} className={inputClass} {...props} />
+  );
 
   return (
     <div className="space-y-6">
-      {saveError && <p role="alert" className="text-red-600">{saveError}</p>}
-      {saveMessage && <p role="status" className="text-green-600">{saveMessage}</p>}
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-          <LuClipboardList aria-hidden="true" className="mr-3 text-orange-600" />
-          Itineraries & Checklists
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Manage and save departure itineraries
-        </p>
-      </div>
+      <header className="glass-strong rounded-3xl p-6">
+        <h2 className="font-display text-2xl font-semibold text-text sm:text-3xl">Itinerary</h2>
+        <p className="mt-1 text-sm text-text-muted">Plan the day-by-day stops for your upcoming departures. Saving replaces the departure's itinerary.</p>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Departure Selection */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Select Departure</h2>
-          <div className="space-y-2">
-            {departures.length === 0 ? (
-              <p className="text-gray-600 dark:text-gray-400">No upcoming departures</p>
-            ) : (
-              departures.map(dep => (
-                <button
-                  key={dep._id}
-                  onClick={() => loadItinerary(dep)}
-                  disabled={saving}
-                  className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                    selectedDeparture?._id === dep._id
-                      ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500'
-                      : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-orange-300'
-                  }`}
-                >
-                  <div className="font-semibold text-gray-900 dark:text-white mb-1">
-                    {dep.packageId?.title}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
-                    <LuCalendar aria-hidden="true" className="mr-2" />
-                    {new Date(dep.startDate).toLocaleDateString()}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Itinerary Editor */}
-        <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-          {!selectedDeparture ? (
-            <div className="text-center py-12">
-              <LuClipboardList aria-hidden="true" className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-600 dark:text-gray-400">{loadingItinerary ? 'Loading saved itinerary…' : 'Select a departure to manage itinerary'}</p>
-            </div>
-          ) : (
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Itinerary: {selectedDeparture.packageId?.title}
-                </h2>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={addDay}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center"
-                  >
-                    <LuPlus aria-hidden="true" className="mr-2" />
-                    Add Day
-                  </button>
-                  <button 
-                    onClick={saveItinerary}
-                    disabled={saving}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold flex items-center"
-                  >
-                    <LuCircleCheck aria-hidden="true" className="mr-2" />
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Days */}
-              <div className="space-y-6">
-                {itinerary.days.map((day, dayIdx) => (
-                  <div key={dayIdx} className="border-2 border-gray-200 dark:border-gray-600 rounded-xl p-4">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                        Day {day.dayNumber}
-                        <span className="ml-3 text-sm text-gray-500">
-                          {day.date.toLocaleDateString()}
-                        </span>
-                      </h3>
-                      <button 
-                        onClick={() => addActivity(dayIdx)}
-                        className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-semibold"
-                      >
-                        + Activity
-                      </button>
-                    </div>
-
-                    {/* Activities */}
-                    <div className="space-y-3">
-                      {day.activities.length === 0 ? (
-                        <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                          No activities added yet
-                        </p>
-                      ) : (
-                        day.activities.map((activity, actIdx) => (
-                          <div key={actIdx} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                            <div className="grid grid-cols-12 gap-3 items-start">
-                              <input
-                                type="time"
-                                value={activity.time}
-                                onChange={(e) => updateActivity(dayIdx, actIdx, 'time', e.target.value)}
-                                className="col-span-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Activity name"
-                                value={activity.name}
-                                onChange={(e) => updateActivity(dayIdx, actIdx, 'name', e.target.value)}
-                                className="col-span-3 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Location"
-                                value={activity.location}
-                                onChange={(e) => updateActivity(dayIdx, actIdx, 'location', e.target.value)}
-                                className="col-span-3 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Notes"
-                                value={activity.notes}
-                                onChange={(e) => updateActivity(dayIdx, actIdx, 'notes', e.target.value)}
-                                className="col-span-3 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                              />
-                              <button
-                                onClick={() => removeActivity(dayIdx, actIdx)}
-                                className="col-span-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-                              >
-                                <LuTrash2 aria-hidden="true" />
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {itinerary.days.length === 0 && (
-                  <div className="text-center py-12">
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">No days added yet</p>
-                    <button 
-                      onClick={addDay}
-                      className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold"
+      <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
+        <section aria-labelledby="upcoming-heading" className="space-y-3">
+          <h3 id="upcoming-heading" className="font-display text-base font-semibold text-text">Upcoming departures</h3>
+          {listLoading && <Skeleton className="h-24 w-full rounded-2xl" />}
+          {!listLoading && listError && <ErrorState title="Departures unavailable" message={listError} onRetry={loadDepartures} />}
+          {!listLoading && !listError && departures.length === 0 && (
+            <EmptyState icon={LuCalendarDays} title="No upcoming departures" description="Departures you are assigned to and that have not started appear here." />
+          )}
+          {!listLoading && !listError && departures.length > 0 && (
+            <ul className="space-y-2">
+              {departures.map(dep => {
+                const active = selected?._id === dep._id;
+                return (
+                  <li key={dep._id}>
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      disabled={saving}
+                      onClick={() => openDeparture(dep)}
+                      className={`glass w-full rounded-2xl p-4 text-left transition-colors disabled:opacity-60 ${active ? 'ring-1 ring-brand/50' : 'hover:bg-surface-muted'}`}
                     >
-                      Add First Day
+                      <span className="block truncate font-semibold text-text">{dep.packageId?.title || 'Group departure'}</span>
+                      <span className="mt-1 block text-sm text-text-muted">{longDate(dep.startDate)}</span>
                     </button>
-                  </div>
-                )}
-              </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-              {/* File Uploads */}
-              <div className="mt-6 pt-6 border-t-2 border-gray-200 dark:border-gray-600">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <LuFileText aria-hidden="true" className="mr-2 text-orange-600" />
-                  Supporting Documents (selected files)
-                </h3>
-                
-                <div className="mb-4">
-                  <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    <div className="text-center">
-                      <LuUpload aria-hidden="true" className="text-3xl text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Select PDF, DOCX, or images for this session
-                      </p>
-                    </div>
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      multiple 
-                      accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
-                      onChange={handleFileUpload}
-                    />
-                  </label>
+        <section aria-labelledby="editor-heading" className="glass min-w-0 rounded-3xl p-5 sm:p-6">
+          {!selected && !loadingItinerary && (
+            <EmptyState icon={LuClipboardList} title="Choose a departure" description="Pick an upcoming departure to plan its days and stops." />
+          )}
+          {loadingItinerary && <Skeleton className="h-64 w-full rounded-2xl" />}
+
+          {selected && !loadingItinerary && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 id="editor-heading" className="font-display text-lg font-semibold text-text">{selected.packageId?.title || 'Group departure'}</h3>
+                  <p className="text-sm text-text-muted">Starts {longDate(selected.startDate)}</p>
+                  {dirty && <div className="mt-2"><Badge tone="warning">Unsaved changes</Badge></div>}
                 </div>
-
-                <p className="text-sm text-gray-500 mb-3">Selected files stay in this session and are not uploaded with the itinerary.</p>
-                {uploadedFiles.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedFiles.map(file => (
-                      <div key={file.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                        <div className="flex items-center">
-                          <LuFileText aria-hidden="true" className="text-orange-600 mr-3" />
-                          <div>
-                            <p className="font-semibold text-gray-900 dark:text-white">{file.name}</p>
-                            <p className="text-xs text-gray-500">
-                              {(file.size / 1024).toFixed(1)} KB • {file.uploadedAt.toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => removeFile(file.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <LuTrash2 aria-hidden="true" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" icon={LuPlus} onClick={() => setEditor(current => addDay(current, selected.startDate))} disabled={saving}>Add day</Button>
+                  <Button icon={LuSave} onClick={saveItinerary} loading={saving} disabled={!dirty || saving}>Save itinerary</Button>
+                </div>
               </div>
+
+              {status.message && (
+                <p role={status.tone === 'error' ? 'alert' : 'status'} className={`rounded-xl px-4 py-3 text-sm ${status.tone === 'error' ? 'border border-danger/40 bg-danger/10 text-danger' : 'border border-success/40 bg-success/10 text-success'}`}>
+                  {status.message}
+                </p>
+              )}
+
+              {editor.days.length === 0 ? (
+                <EmptyState
+                  icon={LuCalendarDays}
+                  title="No days planned yet"
+                  description="Add the first day, then the stops for that day."
+                  action={<Button icon={LuPlus} onClick={() => setEditor(current => addDay(current, selected.startDate))}>Add first day</Button>}
+                />
+              ) : (
+                <div className="space-y-5">
+                  {editor.days.map((day, dayIndex) => (
+                    <section key={day.dayNumber} aria-labelledby={`day-heading-${dayIndex}`} className="rounded-2xl border border-border p-4">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <h4 id={`day-heading-${dayIndex}`} className="font-display text-base font-semibold text-text">
+                          Day {day.dayNumber} <span className="ml-2 text-sm font-normal text-text-muted">{new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                        </h4>
+                        <Button size="sm" variant="secondary" icon={LuPlus} disabled={saving} onClick={() => setEditor(current => addStop(current, dayIndex))}>Add stop</Button>
+                      </div>
+
+                      {day.activities.length === 0 ? (
+                        <p className="text-sm text-text-muted">No stops yet for this day.</p>
+                      ) : (
+                        <ul className="space-y-3">
+                          {day.activities.map((stop, stopIndex) => {
+                            const label = `Day ${day.dayNumber}, stop ${stopIndex + 1}`;
+                            return (
+                              <li key={stopIndex} className="grid gap-3 rounded-xl bg-surface-muted/60 p-3 sm:grid-cols-[7rem_1fr_1fr] xl:grid-cols-[7rem_1fr_1fr_1fr_auto]">
+                                {inputFor(`${label} time`, stop.time || '', value => setEditor(current => updateStop(current, dayIndex, stopIndex, 'time', value)), { type: 'time', disabled: saving })}
+                                {inputFor(`${label} name`, stop.name || '', value => setEditor(current => updateStop(current, dayIndex, stopIndex, 'name', value)), { placeholder: 'Stop name', disabled: saving })}
+                                {inputFor(`${label} location`, stop.location || '', value => setEditor(current => updateStop(current, dayIndex, stopIndex, 'location', value)), { placeholder: 'Location', disabled: saving })}
+                                {inputFor(`${label} notes`, stop.notes || '', value => setEditor(current => updateStop(current, dayIndex, stopIndex, 'notes', value)), { placeholder: 'Notes', disabled: saving })}
+                                <IconButton
+                                  variant="danger"
+                                  icon={LuTrash2}
+                                  label={`Remove ${label}`}
+                                  disabled={saving}
+                                  onClick={() => setEditor(current => removeStop(current, dayIndex, stopIndex))}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

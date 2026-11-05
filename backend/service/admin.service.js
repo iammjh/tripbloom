@@ -50,7 +50,7 @@ export async function getActivityLogs({ limit = 50, adminId, action, startDate, 
 
     return { activities };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -99,7 +99,7 @@ export async function updateUserRole({ userId, newRoles, adminId, ipAddress }) {
 
     return { user };
   } catch (error) {
-    return { error: error.message, status: 500 };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again.", status: 500 };
   }
 }
 
@@ -135,7 +135,7 @@ export async function toggleUserSuspension({ userId, suspend, adminId, reason, i
 
     return { user, message: suspend ? 'User suspended' : 'User activated' };
   } catch (error) {
-    return { error: error.message, status: 500 };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again.", status: 500 };
   }
 }
 
@@ -189,7 +189,7 @@ export async function moderateTourPackage({ packageId, approved, rejectionReason
 
     return { package: tourPackage };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -225,7 +225,7 @@ export async function deleteReview({ reviewId, reason, adminId, ipAddress }) {
 
     return { message: 'Review deleted', reason };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -257,7 +257,7 @@ export async function getSystemSetting({ key }) {
     }
     return { setting };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -268,7 +268,7 @@ export async function getAllSystemSettings({ category }) {
     const settings = await SystemSettings.find(filter).populate('lastUpdatedBy', 'fullName email');
     return { settings };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -308,7 +308,7 @@ export async function updateSystemSetting({ key, value, category, description, a
 
     return { setting };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -346,7 +346,7 @@ export async function createAnnouncement({ title, message, type, targetAudience,
     return { announcement };
   } catch (error) {
     console.error('Failed to create announcement:', error);
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -373,7 +373,7 @@ export async function getActiveAnnouncements({ audience }) {
 
     return { announcements };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -402,7 +402,7 @@ export async function updateAnnouncement({ announcementId, updates, adminId, ipA
 
     return { announcement };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -428,6 +428,6 @@ export async function deleteAnnouncement({ announcementId, adminId, ipAddress })
 
     return { message: 'Announcement deleted' };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }

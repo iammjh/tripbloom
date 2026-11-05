@@ -308,7 +308,7 @@ export async function saveAllSystemSettingsController(req, res) {
     }
     res.json({ success: true, message: 'Settings saved successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to save settings', error: err.message });
+    res.status(500).json({ success: false, message: 'Failed to save settings' });
   }
 }
 

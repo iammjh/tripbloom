@@ -1,10 +1,18 @@
 import { ContactMessage } from '../model/contact.model.js';
 import { logActivity } from '../service/activityLog.service.js';
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Limits match what the administrator's inbox expects; anything longer is refused rather than cut short.
 export async function createContactController(req, res) {
   try {
-    const { name, email, message } = req.body;
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
     if (!name || !email || !message) return res.status(400).json({ success: false, message: 'name, email and message are required' });
+    if (name.length > 100) return res.status(400).json({ success: false, message: 'Keep the name to 100 characters or fewer.' });
+    if (email.length > 254 || !EMAIL.test(email)) return res.status(400).json({ success: false, message: 'Enter a valid email address.' });
+    if (message.length < 10 || message.length > 2000) return res.status(400).json({ success: false, message: 'Your message must be between 10 and 2000 characters.' });
     const doc = new ContactMessage({ name, email, message });
     await doc.save();
     res.json({ success: true, message: 'Message received. We will contact you soon!', contactId: doc._id });

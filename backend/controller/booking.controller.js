@@ -19,6 +19,7 @@ import { autoCompletePassedBookings } from '../service/booking.service.js';
 import { checkInBooking } from '../service/booking.service.js';
 import { updateOperatorNotes } from '../service/booking.service.js';
 import { GroupDeparture } from '../model/groupDeparture.model.js';
+import { maskBookingOperators } from '../service/departureView.js';
 
 const rolesFor = user => (user?.roles || []).map(role => role.toLowerCase());
 const isOperatorRole = roles => roles.includes('operator') || roles.includes('tour_operator');
@@ -29,12 +30,13 @@ async function isBookingOperator(booking, userId) {
   return (booking.assignedOperator?._id || booking.assignedOperator)?.toString() === userId;
 }
 
+// Booking as the caller may see it: operator notes only for operators, and co-operators' contact details masked.
 function visibleBooking(booking, user, includeOperatorNotes = false) {
   const roles = rolesFor(user);
-  if (roles.includes('admin') || includeOperatorNotes) return booking;
+  if (roles.includes('admin')) return booking;
   const value = typeof booking.toObject === 'function' ? booking.toObject() : { ...booking };
-  delete value.operatorNotes;
-  return value;
+  if (!includeOperatorNotes) delete value.operatorNotes;
+  return maskBookingOperators(value, user);
 }
 
 // Create a new booking
@@ -437,7 +439,7 @@ export async function cancelUnpaidBookingsController(req, res) {
       cancelledBookings: result.bookings
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -451,7 +453,7 @@ export async function autoCompleteBookingsController(req, res) {
     res.json({ success: true, message: `Auto-complete processed ${result.completedCount || 0} bookings.`, result });
   } catch (err) {
     console.error('Error in autoCompleteBookingsController:', err);
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -474,7 +476,7 @@ export async function processRefundController(req, res) {
       refundAmount: result.refundAmount
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -515,7 +517,7 @@ export async function requestDateChangeController(req, res) {
       booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -545,7 +547,7 @@ export async function approveDateChangeController(req, res) {
       booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -575,7 +577,7 @@ export async function rejectDateChangeController(req, res) {
       booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 

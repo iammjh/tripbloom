@@ -13,7 +13,6 @@ export async function getAssignedGroupDepartures(operatorId) {
 		.populate('packageId')
 		.populate('operators.operatorId', '-passwordHash')
 		.exec();
-	console.log('DEBUG: getAssignedGroupDepartures for', operatorId, 'found', result.length, 'departures');
 	return result;
 }
 

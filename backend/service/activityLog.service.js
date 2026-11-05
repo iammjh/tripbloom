@@ -22,7 +22,7 @@ export async function logActivity({ adminId, action, targetType, targetId, descr
     return { log };
   } catch (error) {
     console.error('Failed to log activity:', error);
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -40,6 +40,6 @@ export async function getActivityLogOptions() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     };
   } catch (error) {
-    return { error: error.message };
+    console.error("Operation failed:", error.name); return { error: "Something went wrong. Please try again." };
   }
 }

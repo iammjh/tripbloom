@@ -1,382 +1,150 @@
-import { LuBook, LuCalendar, LuCircleCheck, LuCircleX, LuClock, LuDollarSign, LuFilter, LuSearch, LuUsers } from 'react-icons/lu';
-import React, { useState, useEffect } from 'react';
-
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { LuBook, LuFilter, LuSearch, LuUsers } from 'react-icons/lu';
+import Badge from '../components/ui/Badge.jsx';
+import Button from '../components/ui/Button.jsx';
+import EmptyState from '../components/ui/EmptyState.jsx';
+import ErrorState from '../components/ui/ErrorState.jsx';
+import FormField, { inputClass } from '../components/ui/FormField.jsx';
+import Skeleton from '../components/ui/Skeleton.jsx';
 import BookingDetailModal from './BookingDetailModal';
+import { bookingLabel } from '../utils/bookingCode.js';
+import { filterOperatorBookings, operatorBookingsFor, withOperatorNotes } from '../utils/operatorBookings.js';
 
+const TYPE_OPTIONS = [
+  { value: 'ALL', label: 'All types' },
+  { value: 'GROUP', label: 'Group' },
+  { value: 'PRIVATE', label: 'Private' },
+];
+const STATUS_OPTIONS = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'CONFIRMED', label: 'Confirmed' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'REFUNDED', label: 'Refunded' },
+];
+const STATUS_TONE = { PENDING: 'warning', CONFIRMED: 'success', COMPLETED: 'info', CANCELLED: 'danger', REFUNDED: 'neutral' };
+
+const shortDate = value => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+// Bookings on the operator's group departures, with search, type, status and date filters.
 const MyBookings = () => {
   const operatorId = localStorage.getItem('userId');
   const [bookings, setBookings] = useState([]);
-  const [filteredBookings, setFilteredBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
-  
-  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  useEffect(() => {
-    fetchBookings();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const departuresResponse = await fetch(`/api/operator/${operatorId}/dashboard`);
+      if (!departuresResponse.ok) throw new Error('Departures request failed');
+      const departuresData = await departuresResponse.json();
+      const bookingsResponse = await fetch('/api/bookings');
+      if (!bookingsResponse.ok) throw new Error('Bookings request failed');
+      const bookingsData = await bookingsResponse.json();
+      const departureIds = (departuresData.groupDepartures || []).map(d => d._id);
+      setBookings(operatorBookingsFor(bookingsData.bookings || [], departureIds, operatorId));
+    } catch (failure) {
+      console.error('Error fetching bookings:', failure);
+      setError('Your bookings could not be loaded right now.');
+    } finally {
+      setLoading(false);
+    }
   }, [operatorId]);
 
-  useEffect(() => {
-    applyFilters();
-  }, [bookings, searchTerm, typeFilter, statusFilter, dateRange]);
+  useEffect(() => { load(); }, [load]);
 
-  const fetchBookings = async () => {
-    try {
-      // First get operator's departures
-      const deptRes = await fetch(`/api/operator/${operatorId}/dashboard`);
-      if (!deptRes.ok) throw new Error('Failed to fetch departures');
-      const deptData = await deptRes.json();
-      // Fetch bookings from backend and filter to operator's departures or assignedOperator
-      const bookingsRes = await fetch('/api/bookings');
-      if (!bookingsRes.ok) throw new Error('Failed to fetch bookings');
-      const bookingsData = await bookingsRes.json();
-      const allBookings = bookingsData.bookings || [];
-
-      const departureIds = (deptData.groupDepartures || []).map(d => d._id?.toString());
-
-      // Filter bookings: only group bookings (by bookingType or groupDepartureId) that are for this operator
-      const operatorBookings = allBookings.filter(b => {
-        const assignedOp = b.assignedOperator?._id || b.assignedOperator;
-        const groupId = b.groupDepartureId?._id || b.groupDepartureId;
-        const isGroup = (b.bookingType === 'GROUP') || (groupId);
-        if (!isGroup) return false;
-        const groupMatch = groupId && departureIds.includes(groupId.toString());
-        const assignedMatch = assignedOp && assignedOp.toString() === operatorId;
-        return groupMatch || assignedMatch;
-      });
-
-      // Build package -> bookings map (all bookings) to compute sequence numbers
-      const byPackage = {};
-      allBookings.forEach(b => {
-        const pkgId = b.packageId?._id || b.packageId;
-        if (!pkgId) return;
-        const key = pkgId.toString();
-        byPackage[key] = byPackage[key] || [];
-        byPackage[key].push(b);
-      });
-
-      // Sort each package list by createdAt ascending so sequence is deterministic
-      Object.keys(byPackage).forEach(k => {
-        byPackage[k].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      });
-
-      // Attach displayId to operator bookings
-      const withDisplay = operatorBookings.map(b => {
-        const pkg = b.packageId || {};
-        const pkgId = pkg._id || pkg;
-        const list = pkgId ? byPackage[pkgId.toString()] || [] : [];
-        const index = list.findIndex(x => (x._id || x) .toString() === (b._id || b).toString());
-        const seq = index >= 0 ? index + 1 : 1;
-
-        // Prefer explicit package code if available
-        const pkgCode = pkg.packageCode || pkg.code || pkg.shortCode || pkg.packageIdCode;
-        let prefix;
-        if (pkgCode) {
-          prefix = pkgCode.toString().toUpperCase();
-        } else if (pkg.title) {
-          const words = pkg.title.split(/\s+/).filter(Boolean);
-          const a = (words[0] || '').charAt(0) || 'X';
-          const b = (words[1] || words[0] || '').charAt(0) || 'X';
-          prefix = (a + b).toUpperCase() + '000';
-        } else {
-          prefix = 'TB000';
-        }
-
-        return { ...b, _displayId: `${prefix}${seq}` };
-      });
-
-      setBookings(withDisplay);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching bookings:', error);
-      setLoading(false);
-    }
-  };
-
-  const applyFilters = () => {
-    let filtered = [...bookings];
-
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(booking => 
-        booking._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        booking.customerId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        booking.packageId?.title?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Type filter
-    if (typeFilter !== 'ALL') {
-      filtered = filtered.filter(booking => booking.bookingType === typeFilter);
-    }
-
-    // Status filter
-    if (statusFilter !== 'ALL') {
-      filtered = filtered.filter(booking => booking.status === statusFilter);
-    }
-
-    // Date range filter
-    if (dateRange.start) {
-      filtered = filtered.filter(booking => new Date(booking.startDate) >= new Date(dateRange.start));
-    }
-    if (dateRange.end) {
-      filtered = filtered.filter(booking => new Date(booking.endDate) <= new Date(dateRange.end));
-    }
-
-    setFilteredBookings(filtered);
-  };
-
-  const getStatusBadge = (status) => {
-    const badges = {
-      PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', icon: LuClock },
-      CONFIRMED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: LuCircleCheck },
-      CANCELLED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: LuCircleX },
-      COMPLETED: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', icon: LuCircleCheck }
-    };
-    return badges[status] || badges.PENDING;
-  };
-
-  const getTotalPaid = (payments) => {
-    return (payments || [])
-      .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
-      .reduce((sum, p) => sum + p.amount, 0);
-  };
-
-  const getPaymentStatus = (booking) => {
-    const totalPaid = getTotalPaid(booking.payments);
-    const remaining = (booking.finalAmount ?? booking.totalAmount) - totalPaid;
-    
-    if (remaining <= 0) return { label: 'Fully Paid', color: 'green' };
-    if (totalPaid > 0) return { label: 'Partial', color: 'yellow' };
-    return { label: 'Pending', color: 'red' };
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading bookings...</p>
-        </div>
-      </div>
-    );
-  }
+  const visible = useMemo(
+    () => filterOperatorBookings(bookings, { searchTerm, typeFilter, statusFilter, dateRange }),
+    [bookings, searchTerm, typeFilter, statusFilter, dateRange]
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <LuBook aria-hidden="true" className="mr-3 text-orange-600" />
-            My Bookings
-          </h1>
-          <span className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-full font-semibold text-lg">
-            {filteredBookings.length} bookings
-          </span>
-        </div>
+      <p className="text-sm text-text-muted">Bookings on your group departures. Open one to add operator notes.</p>
 
-        {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {/* Search */}
+      <section aria-label="Filter bookings" className="glass grid gap-4 rounded-2xl p-4 md:grid-cols-2 xl:grid-cols-5">
+        <FormField id="book-search" label="Search" className="xl:col-span-2">
           <div className="relative">
-            <LuSearch aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search bookings..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
+            <LuSearch aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            <input id="book-search" type="search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Customer, tour or booking code" className={`${inputClass} pl-9`} />
           </div>
-
-          {/* Type Filter */}
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-          >
-            <option value="ALL">All Types</option>
-            <option value="GROUP">Group</option>
-            <option value="PRIVATE">Personal/Private</option>
+        </FormField>
+        <FormField id="book-type" label="Type">
+          <select id="book-type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className={inputClass}>
+            {TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-          >
-            <option value="ALL">All Status</option>
-            <option value="PENDING">Pending</option>
-            <option value="CONFIRMED">Confirmed</option>
-            <option value="CANCELLED">Cancelled</option>
-            <option value="COMPLETED">Completed</option>
+        </FormField>
+        <FormField id="book-status" label="Status">
+          <select id="book-status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={inputClass}>
+            {STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
+        </FormField>
+        <FormField id="book-from" label="Start from">
+          <input id="book-from" type="date" value={dateRange.start} onChange={e => setDateRange(range => ({ ...range, start: e.target.value }))} className={inputClass} />
+        </FormField>
+        <FormField id="book-to" label="Start to">
+          <input id="book-to" type="date" value={dateRange.end} onChange={e => setDateRange(range => ({ ...range, end: e.target.value }))} className={inputClass} />
+        </FormField>
+      </section>
 
-          {/* Date From */}
-          <input
-            type="date"
-            value={dateRange.start}
-            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-          />
-
-          {/* Date To */}
-          <input
-            type="date"
-            value={dateRange.end}
-            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-          />
+      {loading && (
+        <div className="space-y-3" aria-live="polite">
+          <p className="sr-only">Loading bookings…</p>
+          {[0, 1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
         </div>
-      </div>
+      )}
 
-      {/* Bookings Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Booking ID
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Customer
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Package
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Type
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Dates
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Travelers
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Payment
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredBookings.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="px-6 py-12 text-center">
-                    <LuBook aria-hidden="true" className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                    <p className="text-gray-600 dark:text-gray-400 text-lg">No bookings found</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredBookings.map((booking) => {
-                  const statusBadge = getStatusBadge(booking.status);
-                  const paymentStatus = getPaymentStatus(booking);
-                  
-                  return (
-                    <tr key={booking._id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900 dark:text-white">{booking._displayId || booking._id}</div>
-                        <div className="text-xs text-gray-500">
-                          {new Date(booking.createdAt).toLocaleDateString()}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {(
-                            booking.customerId?.fullName ||
-                            booking.customerId?.name ||
-                            booking.customerName ||
-                            booking.customer?.fullName ||
-                            booking.customer ||
-                            (typeof booking.customerId === 'string' ? booking.customerId : null)
-                          ) || 'Customer'}
-                        </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {booking.customerId?.phone || booking.customer?.phone || ''}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {booking.packageId?.title}
-                        </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {booking.packageId?.destination}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          booking.bookingType === 'GROUP' 
-                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                            : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                        }`}>
-                          {booking.bookingType}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        <div>{new Date(booking.startDate).toLocaleDateString()}</div>
-                        <div className="text-xs text-gray-500">to</div>
-                        <div>{new Date(booking.endDate).toLocaleDateString()}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center text-gray-700 dark:text-gray-300">
-                          <LuUsers aria-hidden="true" className="mr-2 text-orange-600" />
-                          <span className="font-semibold">{booking.numTravelers}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm">
-                          <div className="font-semibold text-gray-900 dark:text-white">
-                            ৳{getTotalPaid(booking.payments).toLocaleString()} / ৳{(booking.finalAmount ?? booking.totalAmount).toLocaleString()}
-                          </div>
-                          <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-${paymentStatus.color}-100 text-${paymentStatus.color}-800 dark:bg-${paymentStatus.color}-900/30 dark:text-${paymentStatus.color}-300`}>
-                            {paymentStatus.label}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.text}`}>
-                          <statusBadge.icon className="mr-1" />
-                          {booking.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button 
-                          onClick={() => setSelectedBooking(booking)}
-                          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold text-sm transition-colors"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {!loading && error && <ErrorState title="Bookings unavailable" message={error} onRetry={load} />}
 
-      {/* Booking Detail Modal */}
+      {!loading && !error && bookings.length === 0 && (
+        <EmptyState icon={LuBook} title="No bookings yet" description="Bookings on your group departures appear here." />
+      )}
+
+      {!loading && !error && bookings.length > 0 && visible.length === 0 && (
+        <EmptyState icon={LuFilter} title="No bookings match these filters" description="Clear the search or widen the dates." />
+      )}
+
+      {!loading && !error && visible.length > 0 && (
+        <>
+          <p className="text-sm text-text-muted">Showing {visible.length} of {bookings.length} bookings</p>
+          <ul className="space-y-3">
+            {visible.map(booking => (
+              <li key={booking._id} className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl p-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-semibold text-brand">{bookingLabel(booking)}</span>
+                    <Badge tone={STATUS_TONE[booking.status] || 'neutral'}>{booking.status}</Badge>
+                  </div>
+                  <p className="mt-1 truncate font-semibold text-text">{booking.packageId?.title || 'Tour'}</p>
+                  <p className="truncate text-sm text-text-muted">
+                    {booking.customerId?.fullName || 'Customer'} · {shortDate(booking.startDate)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-text-muted">
+                  <span className="inline-flex items-center gap-1"><LuUsers aria-hidden="true" className="h-4 w-4" />{booking.numTravelers ?? 0}</span>
+                  <Button size="sm" variant="secondary" onClick={() => setSelectedBooking(booking)}>Open</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       {selectedBooking && (
-        <BookingDetailModal 
+        <BookingDetailModal
           booking={selectedBooking}
           onClose={() => setSelectedBooking(null)}
           onUpdateNotes={(notes) => {
-            setBookings(bookings.map(b => 
-              b._id === selectedBooking._id ? { ...b, operatorNotes: notes } : b
-            ));
+            setBookings(current => withOperatorNotes(current, selectedBooking._id, notes));
+            setSelectedBooking(current => (current ? { ...current, operatorNotes: notes } : current));
           }}
         />
       )}

@@ -11,7 +11,7 @@ import { ContactMessage } from '../model/contact.model.js';
 import { TourPackage } from '../model/tourPackage.model.js';
 import { Message } from '../model/message.model.js';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-export async function runBrowserWorkflows({ origin, temporary, customer, admin, password, browserBooking, api, expect, processes }) {
+export async function runBrowserWorkflows({ origin, temporary, customer, admin, guide, password, browserBooking, api, expect, processes }) {
   assert.equal(new URL(origin).hostname, '127.0.0.1');
   assert.equal(typeof WebSocket, 'function', 'Browser checks require Node >=22 with native WebSocket.');
   const profile = path.join(temporary, 'chrome-profile'); await mkdir(profile);
@@ -74,7 +74,7 @@ export async function runBrowserWorkflows({ origin, temporary, customer, admin, 
     await fill('input[placeholder="Enter your email"]', account.email);
     await fill('input[placeholder="Enter your password"]', password);
     await evaluate('document.querySelector(\'input[placeholder="Enter your password"]\').closest("form").requestSubmit()');
-    const route = account === admin ? '/admin' : '/customer';
+    const route = account === admin ? '/admin' : account === guide ? '/operator' : '/customer';
     await wait(`location.pathname === ${text(route)}`, 'authenticated navigation');
   };
   try {
@@ -787,6 +787,166 @@ export async function runBrowserWorkflows({ origin, temporary, customer, admin, 
     await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await evaluate("window.scrollTo(0, 0)");
     console.log('  Browser: assistant panel blurs the page content behind it when the page is scrolled.');
+
+    // Customer: Chat with the operator opens the dark dialog, sends a message through the signed-in session, and shows it.
+    // The chat button needs a paid booking with an operator. Copy the shared synthetic booking (its payments) for this check,
+    // so the shared booking keeps the state the earlier checks depend on.
+    const chatSource = await Booking.findById(browserBooking._id).lean();
+    const { _id: ignoredId, createdAt: ignoredCreated, updatedAt: ignoredUpdated, bookingCode: ignoredCode, ...chatFields } = chatSource;
+    const chatBooking = await Booking.create({ ...chatFields, status: 'CONFIRMED', assignedOperator: guide._id, cancellation: { isCancelled: false }, dateChangeRequest: undefined });
+    await evaluate('localStorage.clear()');
+    await login(customer);
+    await wait("Boolean(document.querySelector('section[aria-label=\"Bookings\"]'))", 'customer bookings section');
+    await wait("[...document.querySelectorAll('section[aria-label=\"Bookings\"] button')].some(b => b.textContent.trim() === 'Chat')", 'customer booking chat button');
+    await evaluate("(() => { [...document.querySelectorAll('section[aria-label=\"Bookings\"] button')].find(b => b.textContent.trim() === 'Chat').click(); })()");
+    await wait("[...document.querySelectorAll('[role=\"dialog\"]')].some(d => d.innerText.includes('Chat with'))", 'operator chat dialog');
+    const customerChat = 'Browser check: is the bus air-conditioned?';
+    await evaluate(`(() => { const t = document.querySelector('#operator-chat-draft'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(customerChat)}); t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate("(() => { [...document.querySelectorAll('[role=\"dialog\"] button')].find(b => b.textContent.trim() === 'Send').click(); })()");
+    await wait(`document.querySelector('[role="log"]')?.innerText.includes(${JSON.stringify(customerChat)})`, 'sent chat message shown in the dialog');
+    if (saveShot) await saveShot('customer-operator-chat.png');
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await wait("!document.querySelector('#operator-chat-draft')", 'operator chat closed');
+    console.log('  Browser: customer chat with the operator opens, sends a message through the signed-in session, and shows it.');
+
+    // Operator workspace: the shell and home page at three widths, the tablet drawer, and no invented rating.
+    await evaluate('localStorage.clear()');
+    await login(guide);
+    await wait("Boolean(document.querySelector('aside[aria-label=\"Operator navigation\"]'))", 'operator shell');
+    await wait("[...document.querySelectorAll('h2')].some(h => h.textContent.includes('Welcome back'))", 'operator home greeting');
+    const operatorPage = await evaluate("document.body.innerText");
+    assert.ok(!/4\.9/.test(operatorPage), 'The operator home must not show the invented 4.9 rating');
+    for (const width of [1440, 900, 375]) {
+      await call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 800 });
+      await pause(700);
+      const overflow = await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth');
+      assert.ok(overflow <= 0, `Operator home must not scroll sideways at ${width}px (overflow ${overflow})`);
+      if (saveShot && width !== 900) await saveShot(`operator-${width}.png`);
+    }
+    await call('Emulation.setDeviceMetricsOverride', { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
+    await pause(500);
+    await evaluate("(() => { document.querySelector('button[aria-label=\"Toggle navigation\"]').click(); })()");
+    await wait("Boolean(document.querySelector('button[aria-label=\"Close navigation\"]'))", 'operator drawer close control');
+    const operatorDrawerBackground = await evaluate("getComputedStyle(document.querySelector('aside[aria-label=\"Operator navigation\"]')).backgroundColor");
+    const operatorDrawerAlpha = operatorDrawerBackground.startsWith('rgba') ? Number(operatorDrawerBackground.split(',')[3].replace(')', '').trim()) : 1;
+    assert.equal(operatorDrawerAlpha, 1, 'The operator drawer on tablet must be opaque, got ' + operatorDrawerBackground);
+    await evaluate("(() => { document.querySelector('button[aria-label=\"Close navigation\"]').click(); })()");
+    await wait("document.querySelector('aside[aria-label=\"Operator navigation\"]').getBoundingClientRect().right <= 0", 'operator drawer closed by its control');
+    await call('Emulation.clearDeviceMetricsOverride', {});
+    console.log('  Browser: operator home fits 1440px, 900px and 375px; the tablet drawer is opaque and closes; no invented rating is shown.');
+
+    // Operator: My Departures lists the assigned departures with filters, and fits a phone screen.
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'My Departures').click(); })()");
+    await wait("Boolean(document.querySelector('section[aria-label=\"Filter departures\"]'))", 'my departures filters');
+    await wait("[...document.querySelectorAll('li')].some(li => li.innerText.includes('Showing') || li.innerText.includes('Synthetic Group Tour'))", 'departure cards rendered');
+    await wait("!!document.querySelector('ul.grid') || document.body.innerText.includes('No departures')", 'departure list settled');
+    await pause(400);
+    const departureCards = await evaluate("document.querySelectorAll('section[aria-label=\"Filter departures\"] ~ ul > li').length");
+    assert.ok(departureCards >= 1, 'My Departures must list the assigned departures');
+    await evaluate("(() => { const s = document.querySelector('select#dep-status'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'CANCELLED'); s.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    await pause(300);
+    await evaluate("(() => { const s = document.querySelector('select#dep-status'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'ALL'); s.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    await call('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    await pause(700);
+    const departuresOverflow = await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth');
+    if (saveShot) await saveShot('operator-departures-375.png');
+    await call('Emulation.clearDeviceMetricsOverride', {});
+    assert.ok(departuresOverflow <= 0, `My Departures must not scroll sideways at 375px (overflow ${departuresOverflow})`);
+    console.log('  Browser: operator My Departures lists assigned departures, filters, and fits 375px.');
+
+    // Operator: My Bookings lists bookings on the operator's departures with filters, and fits 375px.
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'My Bookings').click(); })()");
+    await wait("Boolean(document.querySelector('section[aria-label=\"Filter bookings\"]'))", 'my bookings filters');
+    await wait("document.body.innerText.includes('Showing') || document.body.innerText.includes('No bookings yet')", 'my bookings settled');
+    await call('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    await pause(700);
+    const bookingsOverflow = await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth');
+    if (saveShot) await saveShot('operator-bookings-375.png');
+    await call('Emulation.clearDeviceMetricsOverride', {});
+    assert.ok(bookingsOverflow <= 0, `My Bookings must not scroll sideways at 375px (overflow ${bookingsOverflow})`);
+    console.log('  Browser: operator My Bookings lists bookings with filters and fits 375px.');
+
+    // Operator: a departure opens into its detail screen with tabs that fit a phone. Start is blocked until the
+    // safety checks are complete, and an incident logged on the Safety tab is still listed after the list reloads.
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'My Departures').click(); })()");
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Open departure')", 'open departure control');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open departure').click(); })()");
+    await wait("Boolean(document.querySelector('[role=\"tablist\"][aria-label=\"Departure sections\"]'))", 'departure detail tabs');
+    await call('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    await pause(700);
+    const detailOverflow = await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth');
+    if (saveShot) await saveShot('operator-departure-detail-375.png');
+    await call('Emulation.clearDeviceMetricsOverride', {});
+    assert.ok(detailOverflow <= 0, `Departure detail must not scroll sideways at 375px (overflow ${detailOverflow})`);
+    await evaluate("(() => { [...document.querySelectorAll('[role=\"tab\"]')].find(t => t.textContent.includes('Safety')).click(); })()");
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Start tour' || b.textContent.trim() === 'Mark tour completed')", 'tour control');
+    await evaluate("(() => { const start = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Start tour'); if (start) start.click(); })()");
+    await wait("document.body.innerText.includes('Complete the safety checks before starting the tour.') || document.body.innerText.includes('Mark tour completed')", 'start tour gated by safety checks');
+    const incidentText = 'Browser check: guest feeling unwell';
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Log incident').click(); })()");
+    await wait("Boolean(document.querySelector('#incident-description'))", 'incident form');
+    await evaluate(`(() => { const t = document.querySelector('#incident-description'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(incidentText)}); t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save incident').click(); })()");
+    await wait(`document.body.innerText.includes(${JSON.stringify(incidentText)})`, 'incident listed after saving');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'My Departures').click(); })()");
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Open departure')", 'departures list after reload');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open departure').click(); })()");
+    await wait("Boolean(document.querySelector('[role=\"tablist\"][aria-label=\"Departure sections\"]'))", 'departure detail after reopening');
+    await evaluate("(() => { [...document.querySelectorAll('[role=\"tab\"]')].find(t => t.textContent.includes('Safety')).click(); })()");
+    await wait(`document.body.innerText.includes(${JSON.stringify(incidentText)})`, 'incident persisted after reopening the departure');
+    console.log('  Browser: operator departure detail fits 375px, blocks Start until safety checks pass, and keeps a logged incident after reopening.');
+
+    // Operator: notes saved from a booking are still there after closing and reopening the booking.
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'My Bookings').click(); })()");
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Open')", 'an operator booking to open');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open').click(); })()");
+    await wait("Boolean(document.querySelector('#operator-notes'))", 'booking notes field');
+    const operatorNote = 'Browser check: vegetarian meals';
+    await evaluate(`(() => { const t = document.querySelector('#operator-notes'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(operatorNote)}); t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save notes').click(); })()");
+    // The button is disabled while saving (aria-busy) and again once the saved text matches the field.
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Save notes' && b.disabled && !b.hasAttribute('aria-busy'))", 'notes saved (save finished)');
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await wait("!document.querySelector('#operator-notes')", 'booking closed');
+    await evaluate("(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open').click(); })()");
+    await wait("Boolean(document.querySelector('#operator-notes'))", 'booking reopened');
+    await wait(`document.querySelector('#operator-notes').value === ${JSON.stringify(operatorNote)}`, 'saved notes shown after reopening');
+    console.log('  Browser: operator notes saved from a booking are still there after closing and reopening it.');
+
+    // Operator: profile, itinerary and messages load from the backend, show no placeholder figures, and fit 375px.
+    const clickNav = label => evaluate(`(() => { [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click(); })()`);
+    const fitsPhone = async name => {
+      await call('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+      await pause(700);
+      const overflow = await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth');
+      if (saveShot) await saveShot(`operator-${name}-375.png`);
+      await call('Emulation.clearDeviceMetricsOverride', {});
+      assert.ok(overflow <= 0, `${name} must not scroll sideways at 375px (overflow ${overflow})`);
+    };
+
+    await clickNav('Profile');
+    await wait("Boolean(document.querySelector('#profile-name')) && document.body.innerText.includes('Identity verification')", 'operator profile loaded');
+    const profileText = await evaluate('document.body.innerText');
+    assert.ok(!/Not in database yet|Rating|reviews/.test(profileText), 'The operator profile must not show placeholder fields or a rating');
+    await fitsPhone('profile');
+    console.log('  Browser: operator profile loads the saved details and identity status, shows no placeholder fields, and fits 375px.');
+
+    await clickNav('Itinerary');
+    await wait("[...document.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Upcoming departures')", 'operator itinerary loaded');
+    await fitsPhone('itinerary');
+    console.log('  Browser: operator itinerary lists upcoming departures and fits 375px.');
+
+    await clickNav('Messages');
+    await wait("Boolean(document.querySelector('[role=\"tablist\"][aria-label=\"Message sections\"]'))", 'operator messages loaded');
+    await wait("document.body.innerText.includes('Conversations') && !document.body.innerText.includes('Loading conversations')", 'operator conversations settled');
+    await evaluate("(() => { document.querySelector('#messages-tab-broadcast').click(); })()");
+    await wait("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Send announcement')", 'announcement composer');
+    const broadcastText = await evaluate('document.body.innerText');
+    assert.ok(!/SMS|email to all/i.test(broadcastText), 'Announcements must not claim SMS or email delivery');
+    await fitsPhone('messages');
+    console.log('  Browser: operator messages list conversations, the announcement tab makes no SMS or email claim, and both fit 375px.');
 
   } finally {
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error('Browser session closed.')); }

@@ -347,7 +347,7 @@ try {
     await vite.listen();
     const browserBooking = await makePrivate(customer);
     const { runBrowserWorkflows } = await import('./browser-workflows.js');
-    await check('real Chrome customer/admin payment and measured dashboard workflows', () => runBrowserWorkflows({ origin: `http://127.0.0.1:${frontendPort}`, temporary, customer, admin, password, browserBooking, api, expect, processes }));
+    await check('real Chrome customer/admin payment and measured dashboard workflows', () => runBrowserWorkflows({ origin: `http://127.0.0.1:${frontendPort}`, temporary, customer, admin, guide: operator, password, browserBooking, api, expect, processes }));
   }
   console.log(`Verified ${checks} isolated database/HTTP${process.env.RUN_BROWSER_TESTS === '1' ? '/browser' : ''} scenarios.`);
 } finally {

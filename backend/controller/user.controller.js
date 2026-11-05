@@ -9,7 +9,7 @@ export async function listUsersController(req, res) {
     const users = await listUsers({ role, isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined, search });
     res.json({ success: true, users });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -24,7 +24,7 @@ export async function createUserController(req, res) {
     }
     res.json({ success: true, message: 'User created successfully.', user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -49,7 +49,7 @@ export async function updateUserController(req, res) {
     }
     res.json({ success: true, message: 'User updated successfully.', user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -63,7 +63,7 @@ export async function deactivateUserController(req, res) {
     }
     res.json({ success: true, message: 'User deactivated successfully.', user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 import { getSavedPackagesForUser, savePackageForUser, unsavePackageForUser } from '../service/user.service.js';
@@ -75,7 +75,7 @@ export async function getSavedPackagesController(req, res) {
     if (result.error) return res.status(404).json({ success: false, message: result.error });
     res.json({ success: true, packages: result.packages });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -86,7 +86,7 @@ export async function savePackageController(req, res) {
     if (result.error) return res.status(404).json({ success: false, message: result.error });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -97,7 +97,7 @@ export async function unsavePackageController(req, res) {
     if (result.error) return res.status(404).json({ success: false, message: result.error });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -110,7 +110,7 @@ export async function getUserController(req, res) {
     if (result.error) return res.status(404).json({ success: false, message: result.error });
     res.json({ success: true, user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
 
@@ -122,9 +122,12 @@ export async function updateProfileController(req, res) {
     if (result.error) return res.status(404).json({ success: false, message: result.error });
     res.json({ success: true, message: 'Profile updated successfully.', user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }
+
+// Clients send the password as `password`. `passwordHash` is still read so that older clients keep working.
+const passwordFrom = body => (typeof body?.password === 'string' ? body.password : body?.passwordHash);
 
 export async function changePasswordController(req, res) {
   const { userId } = req.params;
@@ -135,19 +138,22 @@ export async function changePasswordController(req, res) {
       const status = result.error === 'Current password is incorrect.' ? 401 : 400;
       return res.status(status).json({ success: false, message: result.error });
     }
-    res.json({ success: true, message: 'Password changed successfully.' });
+    // The caller keeps this session; every other session must sign in again.
+    res.json({ success: true, message: 'Password changed. Other sessions have been signed out.', token: result.token });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    console.error('Password change failed', err.name);
+    res.status(500).json({ success: false, message: 'We could not change your password. Please try again.' });
   }
 }
 import { User } from '../model/user.model.js';
-// Get all users (for testing/demo only)
+// Administrator user list: passwords are never included.
 export async function getAllUsersController(req, res) {
   try {
     const users = await User.find({}, '-passwordHash'); // Exclude passwordHash field
     res.json({ success: true, users });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    console.error('User list failed', err.name);
+    res.status(500).json({ success: false, message: 'We could not load users. Please try again.' });
   }
 }
 // user.controller.js
@@ -155,28 +161,30 @@ import { registerUser, loginUser, awardSignupBonusToExistingUsers } from '../ser
 import { ROLES } from '../model/user.model.js';
 
 export async function signupController(req, res) {
-  const { fullName, email, phone, passwordHash, roles } = req.body;
+  const { fullName, email, phone, roles } = req.body;
   try {
-    const result = await registerUser({ fullName, email, phone, passwordHash, roles });
+    const result = await registerUser({ fullName, email, phone, password: passwordFrom(req.body), roles });
     if (result.error) {
       return res.status(result.error === 'Email already exists.' ? 409 : 400).json({ success: false, message: result.error });
     }
     res.json({ success: true, message: 'User registered successfully.', user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    console.error('Signup failed', err.name);
+    res.status(500).json({ success: false, message: 'We could not create your account. Please try again.' });
   }
 }
 
 export async function loginController(req, res) {
-  const { email, passwordHash } = req.body;
+  const { email } = req.body;
   try {
-    const result = await loginUser({ email, passwordHash });
+    const result = await loginUser({ email, password: passwordFrom(req.body) });
     if (result.error) {
       return res.status(result.error === 'Invalid email or password.' ? 401 : 400).json({ success: false, message: result.error });
     }
     res.json({ success: true, message: 'Login successful.', token: result.token, user: result.user });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    console.error('Login failed', err.name);
+    res.status(500).json({ success: false, message: 'We could not sign you in. Please try again.' });
   }
 }
 
@@ -190,8 +198,10 @@ export async function requireAuth(req, res, next) {
   catch { return res.status(401).json({ success: false, message: 'Invalid or expired token.' }); }
   if (!mongoose.isValidObjectId(decoded.id)) return res.status(401).json({ success: false, message: 'Invalid account.' });
   try {
-    const account = await User.findById(decoded.id).select('_id email roles isActive');
+    const account = await User.findById(decoded.id).select('_id email roles isActive tokenVersion');
     if (!account || !account.isActive) return res.status(401).json({ success: false, message: 'Account is inactive or unavailable.' });
+    // A password change raises the account's token version; older sessions must sign in again.
+    if ((decoded.v || 0) !== (account.tokenVersion || 0)) return res.status(401).json({ success: false, message: 'Your session has ended. Please sign in again.' });
     req.user = { id: String(account._id), email: account.email, roles: account.roles };
     return next();
   } catch { return res.status(503).json({ success: false, message: 'Unable to verify account. Please retry.' }); }
@@ -229,6 +239,6 @@ export async function awardSignupBonusController(req, res) {
       users: result.users 
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 }

@@ -82,15 +82,23 @@ const upload = multer({
 
 
 
+import helmet from 'helmet';
+import { loginLimiter, signupLimiter, contactLimiter, newsletterLimiter } from './service/rateLimits.js';
+import { subscribeNewsletterController } from './controller/newsletter.controller.js';
+
 const app = express();
 // Render and similar hosts put one proxy in front of the API; trusting it makes req.ip the visitor's address (used by the assistant's rate limit).
 app.set('trust proxy', 1);
+// Security headers: HSTS, nosniff, frame blocking, a locked-down content policy for JSON responses, and no cached sensitive data.
+// Images are read from the API by the browser's image element, so cross-origin loading stays allowed.
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 
 // CORS Configuration
+// Local development origins are allowed only outside production (set NODE_ENV=production on the host).
+const localOrigins = process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:5173'];
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
+  ...localOrigins,
   process.env.FRONTEND_URL || '',
   process.env.CORS_ORIGIN || '',
 ].filter(Boolean);
@@ -147,15 +155,10 @@ app.get('/api/support/contacts', requireAuth, getSupportContactsController);
 app.get('/api/operator/kyc-statuses', requireRole(ROLES.ADMIN, ROLES.TOUR_OPERATOR), getOperatorKycStatusesController);
 
 // User signup endpoint
-app.post('/api/signup', signupController);
+app.post('/api/signup', signupLimiter, signupController);
 
 // User login endpoint
-app.post('/api/login', loginController);
-
-// Example protected route (admin only)
-app.post('/api/admin-only', requireRole(ROLES.ADMIN), (req, res) => {
-  res.json({ success: true, message: 'Welcome, admin!' });
-});
+app.post('/api/login', loginLimiter, loginController);
 
 // Routes
 app.get('/api/health', (req, res) => {
@@ -252,9 +255,10 @@ app.post('/api/admin/group-departures/:departureId/operators', requireRole(ROLES
 app.delete('/api/admin/group-departures/:departureId/operators/:operatorId', requireRole(ROLES.ADMIN), removeOperatorFromDepartureController);
 
 // Seat map endpoints for group departures
-import { getSeatMapController, updateSeatMapController, checkDepartureAvailabilityController, getAvailableDeparturesForPackageController } from './controller/groupDeparture.controller.js';
+import { getSeatMapController, updateSeatMapController, checkDepartureAvailabilityController, getAvailableDeparturesForPackageController, addDepartureIncidentController } from './controller/groupDeparture.controller.js';
 app.get('/api/group-departure/:departureId/seat-map', requireAuth, getSeatMapController);
 app.put('/api/group-departure/:departureId/seat-map', requireAuth, updateSeatMapController);
+app.post('/api/group-departure/:departureId/incidents', requireRole(ROLES.ADMIN, ROLES.TOUR_OPERATOR), addDepartureIncidentController); // Operator incident log
 
 // Customer-facing departure availability endpoints
 app.get('/api/departures/:departureId/availability', checkDepartureAvailabilityController); // Check single departure availability
@@ -331,20 +335,16 @@ app.get('/api/stats/platform', getPlatformStatsController); // Get overall platf
 app.get('/api/stats/bookings', requireRole(ROLES.ADMIN), getBookingStatsController); // Get booking statistics
 
 // Contact form endpoint (store submissions)
-app.post('/api/contact', createContactController);
+app.post('/api/contact', contactLimiter, createContactController);
 // Admin: list and manage contact messages
 app.get('/api/admin/contacts', requireRole(ROLES.ADMIN), listContactsController);
 app.get('/api/admin/contacts/:id', requireRole(ROLES.ADMIN), getContactController);
 app.post('/api/admin/contacts/:id/handled', requireRole(ROLES.ADMIN), markContactHandledController);
 
 // Newsletter subscription
-app.post('/api/newsletter', (req, res) => {
-  const { email } = req.body;
-  console.log('Newsletter subscription:', email);
-  res.json({ success: true, message: 'Successfully subscribed to TripBloom newsletter!' });
-});
+app.post('/api/newsletter', newsletterLimiter, subscribeNewsletterController);
 
-// Get all users (for testing/demo only)
+// Administrator user list (used by the admin chat panel)
 app.get('/api/users', requireRole(ROLES.ADMIN), getAllUsersController);
 
 // User saved packages endpoints
@@ -353,29 +353,6 @@ app.post('/api/users/:userId/save/:packageId', requireAuth, requireSelfOrAdmin, 
 app.delete('/api/users/:userId/save/:packageId', requireAuth, requireSelfOrAdmin, unsavePackageController);
 
 
-
-
-// Popular destinations (mock data)
-app.get('/api/destinations', (req, res) => {
-  const destinations = [
-    { id: 1, name: 'Bali Paradise', duration: '7 Days', price: 1299, image: 'bali.jpg', type: 'International' },
-    { id: 2, name: 'Swiss Alps Adventure', duration: '10 Days', price: 2499, image: 'swiss.jpg', type: 'International' },
-    { id: 3, name: 'Maldives Retreat', duration: '5 Days', price: 1899, image: 'maldives.jpg', type: 'International' },
-    { id: 4, name: 'Santorini Sunset Tour', duration: '6 Days', price: 1599, image: 'santorini.jpg', type: 'International' },
-  ];
-  res.json(destinations);
-});
-
-// Tour packages
-app.get('/api/packages', (req, res) => {
-  const packages = [
-    { id: 1, tier: 'Silver', price: 499, features: ['Standard Hotels', 'Basic Transport', 'Breakfast Included'] },
-    { id: 2, tier: 'Gold', price: 899, features: ['3-Star Hotels', 'AC Transport', 'All Meals', 'Local Guide'] },
-    { id: 3, tier: 'Platinum', price: 1499, features: ['4-Star Hotels', 'Premium Transport', 'All Meals', 'Expert Guide', 'Activities'] },
-    { id: 4, tier: 'Diamond Elite', price: 2999, features: ['5-Star Resorts', 'Luxury Transport', 'Fine Dining', 'Personal Concierge', 'VIP Experiences'] },
-  ];
-  res.json(packages);
-});
 
 
 app.get('/api/reviews/package/:packageId', (req, res, next) => {

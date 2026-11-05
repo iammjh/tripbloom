@@ -5,8 +5,20 @@ import { createLimiter } from '../service/assistantLimiter.js';
 const BUSY_MESSAGE = 'The assistant is busy right now. Please try again in a minute.';
 const RATE_LIMIT_MESSAGE = 'You have asked many questions. Please wait a few minutes and try again.';
 
-// Factory so tests can inject the assistant call and the limiter; the exported handler uses the real ones.
-export function createChatController({ askFn = askAssistant, limiter = createLimiter() } = {}) {
+// The per-client limit alone cannot cap provider spend, because one caller can change address. This cap applies to all callers.
+const DAILY_MESSAGE = 'The assistant has answered its daily limit of questions. Please try again tomorrow.';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dailyCap = () => {
+  const parsed = Number(process.env.ASSISTANT_DAILY_LIMIT);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 300;
+};
+
+// Factory so tests can inject the assistant call and the limiters; the exported handler uses the real ones.
+export function createChatController({
+  askFn = askAssistant,
+  limiter = createLimiter(),
+  dailyLimiter = createLimiter({ limit: dailyCap(), windowMs: DAY_MS })
+} = {}) {
   return async function chat(req, res) {
     const input = validateChatInput(req.body || {});
     if (!input.ok) return res.status(400).json({ success: false, message: input.message });
@@ -16,6 +28,12 @@ export function createChatController({ askFn = askAssistant, limiter = createLim
     if (!allowance.allowed) {
       res.set('Retry-After', String(allowance.retryAfterSeconds));
       return res.status(429).json({ success: false, message: RATE_LIMIT_MESSAGE });
+    }
+
+    const daily = dailyLimiter.consume('all');
+    if (!daily.allowed) {
+      res.set('Retry-After', String(daily.retryAfterSeconds));
+      return res.status(429).json({ success: false, message: DAILY_MESSAGE });
     }
 
     try {

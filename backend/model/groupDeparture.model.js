@@ -56,6 +56,18 @@ const groupDepartureSchema = new mongoose.Schema({
   },
   // Indicator that the tour has been marked started by operator
   tourStarted: { type: Boolean, default: false },
+  // Incident log kept by the assigned operator during the tour
+  incidents: {
+    type: [
+      {
+        description: { type: String, required: true, trim: true, maxlength: 1000 },
+        severity: { type: String, enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], required: true },
+        reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        reportedAt: { type: Date, default: Date.now }
+      }
+    ],
+    default: []
+  },
   createdAt: { type: Date, default: Date.now }
 }, { optimisticConcurrency: true });
 

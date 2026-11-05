@@ -1,284 +1,155 @@
-import { LuMail, LuPhone, LuSend, LuUserCog, LuX } from 'react-icons/lu';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { LuMail, LuPhone, LuSend } from 'react-icons/lu';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import Modal from './ui/Modal.jsx';
+import { inputClass } from './ui/FormField.jsx';
 import { ChatIcon } from './ui/icons.js';
 import { notify } from '../utils/notifyStore.js';
-import React, { useState, useEffect, useRef } from 'react';
-import ReactDOM from 'react-dom';
+import { userMessage } from '../utils/errorMessage.js';
 
-import axios from 'axios';
+const REFRESH_MS = 3000;
+const MESSAGE_LIMIT = 5000;
 
+const idOf = value => String(value?._id || value || '');
+
+// The customer's chat with the operator on one booking. Requests go through fetch so the signed-in token is sent.
 const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);
-  const previousMessagesCountRef = useRef(0);
-  const isUserScrolledUpRef = useRef(false);
   const userId = localStorage.getItem('userId');
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const endRef = useRef(null);
 
-  useEffect(() => {
-    if (isOpen && booking?._id) {
-      // Prevent body scroll when modal is open
-      document.body.style.overflow = 'hidden';
-      
-      previousMessagesCountRef.current = 0;
-      isUserScrolledUpRef.current = false;
-      loadMessages(true); // Initial load with scroll
-      
-      // Set up auto-refresh every 3 seconds
-      const interval = setInterval(() => {
-        loadMessages(false); // Auto-refresh without forced scroll
-      }, 3000);
-      
-      // Cleanup interval when modal closes
-      return () => {
-        clearInterval(interval);
-        setMessages([]);
-        // Restore body scroll when modal closes
-        document.body.style.overflow = 'unset';
-      };
-    } else {
-      // Ensure body scroll is restored if modal is not open
-      document.body.style.overflow = 'unset';
-    }
-  }, [isOpen, booking]);
+  const bookingId = booking?._id;
+  const operatorInfo = operator || booking?.assignedOperator || {};
+  const operatorId = idOf(operator) || idOf(booking?.assignedOperator);
 
-  // Track if user has scrolled up
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      // Check if user is at the bottom (within 50px threshold)
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-      isUserScrolledUpRef.current = !isAtBottom;
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const scrollToBottom = (smooth = true) => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
-    }
-  };
-
-  const loadMessages = async (shouldScroll = false) => {
-    // Don't show loading spinner for auto-refresh, only for initial load
-    const isInitialLoad = messages.length === 0;
-    if (isInitialLoad) {
-      setLoading(true);
-    }
-    
+  const loadMessages = useCallback(async () => {
+    if (!bookingId) return;
     try {
-      const res = await axios.get(`/api/messages/booking/${booking._id}`);
-      if (res.data.success) {
-        const newMessages = res.data.messages || [];
-        // Filter messages so operator only sees conversations where they are a participant
-        const filtered = newMessages.filter(msg => {
-          const sId = msg.senderId?._id || msg.senderId;
-          const rId = msg.recipientId?._id || msg.recipientId;
-          return String(sId) === String(userId) || String(rId) === String(userId);
-        });
-
-        // Only update state if messages have actually changed
-        if (JSON.stringify(filtered) !== JSON.stringify(messages)) {
-          const hadNewMessages = filtered.length > previousMessagesCountRef.current;
-          setMessages(filtered);
-          previousMessagesCountRef.current = filtered.length;
-          
-          // Only scroll if:
-          // 1. Initial load or explicit scroll requested
-          // 2. New messages arrived AND user is not scrolled up reading old messages
-          if (shouldScroll || isInitialLoad) {
-            setTimeout(() => scrollToBottom(false), 50);
-          } else if (hadNewMessages && !isUserScrolledUpRef.current) {
-            setTimeout(() => scrollToBottom(), 50);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load messages:', err);
-    }
-    
-    if (isInitialLoad) {
+      const res = await fetch(`/api/messages/booking/${bookingId}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Messages could not be loaded.');
+      // Only messages this customer sent or received are shown.
+      const mine = (data.messages || []).filter(msg => idOf(msg.senderId) === userId || idOf(msg.recipientId) === userId);
+      setMessages(mine);
+      setLoadError('');
+    } catch (failure) {
+      console.error('Failed to load messages:', failure);
+      setLoadError(userMessage(failure, 'Messages could not be loaded right now.'));
+    } finally {
       setLoading(false);
     }
-  };
+  }, [bookingId, userId]);
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || sending) return;
+  useEffect(() => {
+    if (!isOpen || !bookingId) return undefined;
+    setLoading(true);
+    loadMessages();
+    const timer = setInterval(loadMessages, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [isOpen, bookingId, loadMessages]);
 
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, isOpen]);
+
+  // Clear the draft when the modal opens for another booking.
+  useEffect(() => { setDraft(''); }, [bookingId]);
+
+  const send = async event => {
+    event?.preventDefault();
+    const content = draft.trim();
+    if (!content || sending || !bookingId) return;
     setSending(true);
     try {
-      const res = await axios.post('/api/messages', {
-        bookingId: booking._id,
-        senderId: userId,
-        recipientId: operator?._id || booking.assignedOperator?._id || booking.assignedOperator,
-        content: newMessage.trim()
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId, senderId: userId, recipientId: operatorId, content })
       });
-
-      if (res.data.success) {
-        // The backend returns the message in res.data.data
-        const sentMessage = res.data.data;
-        const updatedMessages = [...messages, sentMessage];
-        setMessages(updatedMessages);
-        previousMessagesCountRef.current = updatedMessages.length;
-        setNewMessage('');
-        // Scroll to bottom after sending
-        setTimeout(() => scrollToBottom(), 100);
-      }
-    } catch (err) {
-      console.error('Failed to send message:', err);
-      notify.message('Failed to send message. Please try again.');
-    }
-    setSending(false);
-  };
-
-  const formatTime = (date) => {
-    try {
-      return new Date(date).toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return '';
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Message not sent.');
+      setDraft('');
+      await loadMessages();
+    } catch (failure) {
+      notify.error(userMessage(failure, 'Your message was not sent. Please try again.'));
+    } finally {
+      setSending(false);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !booking) return null;
 
-  const operatorInfo = operator || booking?.assignedOperator || {};
+  const formatTime = value => new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-primary to-green-600">
-          <div className="flex items-center gap-4">
-            <div className="bg-white text-primary p-3 rounded-full">
-              <LuUserCog aria-hidden="true" className="text-2xl" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                Chat with Tour Operator
-              </h2>
-              <p className="text-white/80 text-sm">
-                {operatorInfo.fullName || 'Tour Operator'}
-              </p>
-            </div>
-          </div>
-          <button
-            aria-label="Close"
-            onClick={onClose}
-            className="text-white hover:bg-white/20 p-2 rounded-full transition-colors"
-          >
-            <LuX aria-hidden="true" size={24} />
-          </button>
-        </div>
-
-        {/* Operator Contact Info */}
-        <div className="p-4 bg-blue-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-          <div className="flex flex-wrap gap-4 text-sm">
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={`Chat with ${operatorInfo.fullName || 'your tour operator'}`}
+      description={`Booking: ${booking?.packageId?.title || 'Tour package'}`}
+      size="lg"
+      rootClassName="dark"
+    >
+      <div className="space-y-4">
+        {(operatorInfo.phone || operatorInfo.email) && (
+          <div className="flex flex-wrap gap-2 text-sm">
             {operatorInfo.phone && (
-              <a 
-                href={`tel:${operatorInfo.phone}`}
-                className="flex items-center gap-2 text-primary dark:text-blue-400 hover:underline"
-              >
-                <LuPhone aria-hidden="true" />
-                {operatorInfo.phone}
+              <a href={`tel:${operatorInfo.phone}`} className="glass inline-flex min-h-[44px] items-center gap-2 rounded-xl px-3 text-brand hover:underline">
+                <LuPhone aria-hidden="true" className="h-4 w-4" />{operatorInfo.phone}
               </a>
             )}
             {operatorInfo.email && (
-              <a 
-                href={`mailto:${operatorInfo.email}`}
-                className="flex items-center gap-2 text-primary dark:text-blue-400 hover:underline"
-              >
-                <LuMail aria-hidden="true" />
-                {operatorInfo.email}
+              <a href={`mailto:${operatorInfo.email}`} className="glass inline-flex min-h-[44px] items-center gap-2 rounded-xl px-3 text-brand hover:underline">
+                <LuMail aria-hidden="true" className="h-4 w-4" />{operatorInfo.email}
               </a>
             )}
           </div>
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-            Booking: {booking?.packageId?.title || 'Tour Package'}
-          </div>
-        </div>
+        )}
 
-        {/* Messages Area */}
-        <div 
-          ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900"
-        >
-          {messages.length === 0 && !loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <ChatIcon aria-hidden="true" className="mx-auto mb-4 h-16 w-16 text-text-muted" />
-              <p className="text-gray-500 dark:text-gray-400">
-                No messages yet. Start the conversation!
-              </p>
-            </div>
-          ) : (
-            <>
-              {messages.map((msg, index) => {
-                const isMyMessage = msg.senderId?._id === userId || msg.senderId === userId;
-                return (
-                  <div
-                    key={index}
-                    className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                      isMyMessage
-                        ? 'bg-gradient-to-r from-primary to-green-600 text-white'
-                        : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-md'
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
-                    <p
-                      className={`text-xs mt-1 ${
-                        isMyMessage ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'
-                      }`}
-                    >
-                      {formatTime(msg.sentAt)}
-                    </p>
-                  </div>
-                </div>
-              );
-              })}
-              <div ref={messagesEndRef} />
-            </>
+        <div role="log" aria-live="polite" aria-label="Messages with your tour operator" className="glass max-h-[50vh] min-h-[280px] space-y-3 overflow-y-auto overscroll-contain rounded-2xl p-4">
+          {loading && <p className="text-sm text-text-muted">Loading messages…</p>}
+          {!loading && loadError && <p role="alert" className="text-sm text-danger">{loadError}</p>}
+          {!loading && !loadError && messages.length === 0 && (
+            <EmptyState icon={ChatIcon} title="No messages yet" description="Say hello to start the conversation." />
           )}
+          {!loading && !loadError && messages.map(msg => {
+            const mine = idOf(msg.senderId) === userId;
+            return (
+              <div key={msg._id || `${msg.sentAt}-${msg.content}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${mine ? 'bg-brand text-on-brand' : 'bg-surface-muted text-text'}`}>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.content}</p>
+                  <p className={`mt-1 text-[11px] ${mine ? 'opacity-80' : 'text-text-muted'}`}>{formatTime(msg.sentAt)}</p>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={endRef} />
         </div>
 
-        {/* Message Input */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <form onSubmit={handleSendMessage} className="flex gap-3">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary dark:bg-gray-700 dark:text-white"
-              disabled={sending}
-            />
-            <button
-              type="submit"
-              disabled={!newMessage.trim() || sending}
-              className="px-6 py-3 bg-gradient-to-r from-primary to-green-600 text-white font-semibold rounded-xl hover:from-green-600 hover:to-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <LuSend aria-hidden="true" />
-              Send
-            </button>
-          </form>
-        </div>
+        <form onSubmit={send} className="flex items-end gap-3">
+          <label htmlFor="operator-chat-draft" className="sr-only">Message</label>
+          <textarea
+            id="operator-chat-draft"
+            rows={1}
+            maxLength={MESSAGE_LIMIT}
+            value={draft}
+            disabled={sending}
+            placeholder="Type your message. Enter sends, Shift+Enter adds a line."
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); }
+            }}
+            className={`${inputClass} min-h-[44px] resize-none`}
+          />
+          <Button type="submit" icon={LuSend} loading={sending} disabled={!draft.trim()}>Send</Button>
+        </form>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 };
 

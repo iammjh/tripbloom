@@ -1,5 +1,6 @@
 
 import { getAssignedGroupDepartures, getOperatorProfile, updateOperatorProfile, getOperatorStats } from '../service/operator.service.js';
+import { departureForRole } from '../service/departureView.js';
 
 function canAccessOperator(req) {
   const roles = (req.user?.roles || []).map(role => role.toLowerCase());
@@ -13,16 +14,15 @@ export async function getOperatorDashboardController(req, res) {
   if (!canAccessOperator(req)) return res.status(403).json({ success: false, message: 'Forbidden: profile access is restricted.' });
 	try {
 		const operatorId = req.params.operatorId;
-		console.log('DEBUG: operatorId:', operatorId);
 		const [profile, groupDepartures] = await Promise.all([
 			getOperatorProfile(operatorId),
 			getAssignedGroupDepartures(operatorId)
 		]);
 
-		res.json({ profile, groupDepartures });
+		res.json({ profile, groupDepartures: groupDepartures.map(departure => departureForRole(departure, req.user)) });
 	} catch (err) {
 		console.error('DEBUG: error in getOperatorDashboardController:', err);
-		res.status(500).json({ error: 'Failed to fetch operator dashboard', details: err.message });
+		res.status(500).json({ error: 'Failed to fetch operator dashboard' });
 	}
 }
 
@@ -52,7 +52,7 @@ export async function getOperatorProfileController(req, res) {
 		});
 	} catch (err) {
 		console.error('ERROR in getOperatorProfileController:', err);
-		res.status(500).json({ error: 'Failed to fetch operator profile', details: err.message });
+		res.status(500).json({ error: 'Failed to fetch operator profile' });
 	}
 }
 
@@ -76,6 +76,11 @@ export async function updateOperatorProfileController(req, res) {
 		});
 	} catch (err) {
 		console.error('ERROR in updateOperatorProfileController:', err);
-		res.status(err.code === 11000 ? 409 : (err.name === 'Error' || err.name === 'ValidationError' ? 400 : 500)).json({ success: false, message: err.code === 11000 ? 'Email is already in use.' : 'Unable to update profile: verify the supplied fields and availability.' });
+		// Plain Error instances come from updateOperatorProfile's own validation and are safe to show.
+		const isValidation = err.name === 'Error' || err.name === 'ValidationError';
+		const message = err.code === 11000
+			? 'Email is already in use.'
+			: (err.name === 'Error' ? err.message : 'Unable to update profile: verify the supplied fields and availability.');
+		res.status(err.code === 11000 ? 409 : (isValidation ? 400 : 500)).json({ success: false, message });
 	}
 }

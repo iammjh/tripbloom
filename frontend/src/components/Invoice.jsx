@@ -33,44 +33,34 @@ const Invoice = ({ isOpen, onClose, booking }) => {
   const packageInfo = booking.packageId || {};
   const { gross: totalPaid, remaining: balance } = paymentTotals(booking);
 
-  // Debug: Log the booking object to see its structure
-  console.log('[Invoice] Booking data:', booking);
-  console.log('[Invoice] Customer data:', booking.customerId);
-  console.log('[Invoice] Package data:', packageInfo);
-
+  // The print window gets fixed styling plus a copy of the rendered invoice node. No booking data is written as HTML text:
+  // the copy keeps React's escaped text as it is, and the title is set as plain text.
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Invoice - ${booking._id || booking.id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .invoice-container { max-width: 800px; margin: 0 auto; }
-            .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 20px; }
-            .header h1 { color: #10b981; margin: 0; }
-            .info-section { margin: 20px 0; }
-            .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
-            .info-label { font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background-color: #f3f4f6; font-weight: bold; }
-            .total-section { margin-top: 20px; text-align: right; }
-            .total-row { padding: 8px 0; }
-            .total-amount { font-size: 1.5em; font-weight: bold; color: #10b981; }
-            .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #10b981; color: #6b7280; }
-            @media print {
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          ${invoiceRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    if (!printWindow || !invoiceRef.current) return;
+    const doc = printWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title><style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      .invoice-container { max-width: 800px; margin: 0 auto; }
+      .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 20px; }
+      .header h1 { color: #10b981; margin: 0; }
+      .info-section { margin: 20px 0; }
+      .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+      .info-label { font-weight: bold; }
+      table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+      th { background-color: #f3f4f6; font-weight: bold; }
+      .total-section { margin-top: 20px; text-align: right; }
+      .total-row { padding: 8px 0; }
+      .total-amount { font-size: 1.5em; font-weight: bold; color: #10b981; }
+      .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #10b981; color: #6b7280; }
+      @media print { .no-print { display: none; } }
+    </style></head><body></body></html>`);
+    doc.close();
+    doc.title = `Invoice - ${String(booking._id || booking.id || '')}`;
+    doc.body.appendChild(doc.importNode(invoiceRef.current, true));
+    printWindow.focus();
     printWindow.print();
   };
 
