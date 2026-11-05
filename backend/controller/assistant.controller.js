@@ -28,7 +28,7 @@ export function createChatController({ askFn = askAssistant, limiter = createLim
         return res.status(503).json({ success: false, message: BUSY_MESSAGE });
       }
       if (error?.code === 'ASSISTANT_NOT_CONFIGURED' || error?.code === 'ASSISTANT_UPSTREAM_FAILED') {
-        console.error('Customer assistant unavailable:', error.code);
+        console.error('Customer assistant unavailable:', error.code, error.status ? `status=${error.status}` : '', error.detail ? `detail=${error.detail}` : '');
         return res.status(503).json({ success: false, message: ASSISTANT_UNAVAILABLE_MESSAGE });
       }
       console.error('Customer assistant failed:', error?.message || error);

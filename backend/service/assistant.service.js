@@ -95,10 +95,23 @@ const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const MAX_TOKENS = 800;
 const UPSTREAM_TIMEOUT_MS = 20000;
 
-function assistantError(code, message) {
+function assistantError(code, message, extra = {}) {
   const error = new Error(message);
   error.code = code;
+  Object.assign(error, extra);
   return error;
+}
+
+// A short, safe description of a provider error (its message only, trimmed).
+async function providerDetail(response) {
+  try {
+    const body = await response.text();
+    const parsed = JSON.parse(body);
+    const message = parsed?.error?.message || parsed?.error || '';
+    return String(message).slice(0, 160);
+  } catch {
+    return '';
+  }
 }
 
 // One section per package, so the model can quote facts from a single place.
@@ -173,18 +186,22 @@ const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
 export function resolveProvider(env = process.env) {
   const choice = String(env.ASSISTANT_PROVIDER || '').trim().toLowerCase();
-  const model = env.ASSISTANT_MODEL || '';
+  // Values pasted into a host's settings page often carry a stray space or newline; remove it.
+  const model = String(env.ASSISTANT_MODEL || '').trim();
+  const groqKey = String(env.GROQ_API_KEY || '').trim();
+  const assistantKey = String(env.ASSISTANT_API_KEY || '').trim();
+  const anthropicKey = String(env.ANTHROPIC_API_KEY || '').trim();
 
-  if (choice === 'groq' || (!choice && !env.ANTHROPIC_API_KEY && env.GROQ_API_KEY)) {
-    if (!env.GROQ_API_KEY) return null;
-    return { format: 'openai', url: `${GROQ_BASE_URL}/chat/completions`, apiKey: env.GROQ_API_KEY, model: model || GROQ_DEFAULT_MODEL };
+  if (choice === 'groq' || (!choice && !anthropicKey && groqKey)) {
+    if (!groqKey) return null;
+    return { format: 'openai', url: `${GROQ_BASE_URL}/chat/completions`, apiKey: groqKey, model: model || GROQ_DEFAULT_MODEL };
   }
   if (choice === 'openai-compatible') {
-    if (!env.ASSISTANT_BASE_URL || !env.ASSISTANT_API_KEY || !model) return null;
-    return { format: 'openai', url: `${env.ASSISTANT_BASE_URL.replace(/\/+$/, '')}/chat/completions`, apiKey: env.ASSISTANT_API_KEY, model };
+    if (!env.ASSISTANT_BASE_URL || !assistantKey || !model) return null;
+    return { format: 'openai', url: `${String(env.ASSISTANT_BASE_URL).trim().replace(/\/+$/, '')}/chat/completions`, apiKey: assistantKey, model };
   }
-  if (env.ANTHROPIC_API_KEY) {
-    return { format: 'anthropic', url: ANTHROPIC_URL, apiKey: env.ANTHROPIC_API_KEY, model: model || DEFAULT_MODEL };
+  if (anthropicKey) {
+    return { format: 'anthropic', url: ANTHROPIC_URL, apiKey: anthropicKey, model: model || DEFAULT_MODEL };
   }
   return null;
 }
@@ -205,7 +222,10 @@ async function callProvider(provider, { system, messages, fetchImpl, maxTokens =
     throw assistantError('ASSISTANT_UPSTREAM_FAILED', 'The assistant request failed.');
   }
   if (response.status === 429) throw assistantError('ASSISTANT_RATE_LIMITED', 'The assistant is busy right now.');
-  if (!response.ok) throw assistantError('ASSISTANT_UPSTREAM_FAILED', 'The assistant request failed.');
+  if (!response.ok) {
+    const detail = await providerDetail(response);
+    throw assistantError('ASSISTANT_UPSTREAM_FAILED', 'The assistant request failed.', { status: response.status, detail });
+  }
 
   let data;
   try {

@@ -309,3 +309,16 @@ import app from '../app.js';
 test('the backend trusts the one proxy hop in front of it, so the per-visitor limit uses the real client address', () => {
   assert.equal(app.get('trust proxy'), 1);
 });
+
+test('whitespace pasted around the key or the model name is removed', () => {
+  const groq = resolveProvider({ GROQ_API_KEY: '  gsk-x\n', ASSISTANT_MODEL: 'openai/gpt-oss-120b\n' });
+  assert.equal(groq.apiKey, 'gsk-x');
+  assert.equal(groq.model, 'openai/gpt-oss-120b');
+});
+
+test('a provider error keeps its HTTP status for the server log, without the key', async () => {
+  await assert.rejects(
+    askAssistant({ message: 'Best time to visit Sundarbans?', env: { GROQ_API_KEY: 'gsk-secret-2' }, fetchImpl: async () => new Response('{"error":{"message":"The model `x` does not exist"}}', { status: 404 }), loadSnapshot: snapshot }),
+    err => err.code === 'ASSISTANT_UPSTREAM_FAILED' && err.status === 404 && /does not exist/.test(err.detail) && !JSON.stringify(err).includes('gsk-secret-2'),
+  );
+});
