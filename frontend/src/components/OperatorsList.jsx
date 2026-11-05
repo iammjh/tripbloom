@@ -1,6 +1,8 @@
+import { LuEye, LuPencil, LuPlus, LuSearch, LuToggleLeft, LuToggleRight, LuTriangleAlert, LuUsers } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaUsers, FaPlus, FaEye, FaEdit, FaToggleOn, FaToggleOff, FaExclamationTriangle, FaSearch } from 'react-icons/fa';
+import { thClass, tdClass } from './admin/AdminPrimitives.jsx';
+
 
 const OperatorsList = ({ onViewDetails }) => {
   const [operators, setOperators] = useState([]);
@@ -73,7 +75,7 @@ const OperatorsList = ({ onViewDetails }) => {
                 const opId = op.operatorId?._id || op.operatorId;
                 const match = String(opId) === String(operator._id);
                 if (match) {
-                  console.log(`  ✓ Matched in departure: ${dep.packageId?.title || dep._id}`);
+                  console.log(`  Matched in departure: ${dep.packageId?.title || dep._id}`);
                 }
                 return match;
               });
@@ -90,7 +92,7 @@ const OperatorsList = ({ onViewDetails }) => {
               return isFuture;
             }).length;
             
-            console.log(`✓ Upcoming departures count: ${upcomingDepartures}`);
+            console.log(`Upcoming departures count: ${upcomingDepartures}`);
             
             // Count unique packages from all operator departures
             const uniquePackageIds = new Set(
@@ -104,7 +106,7 @@ const OperatorsList = ({ onViewDetails }) => {
             
             const assignedPackages = uniquePackageIds.size;
             
-            console.log(`✓ Unique packages count: ${assignedPackages}\n`);
+            console.log(`Unique packages count: ${assignedPackages}\n`);
 
             return {
               ...operator,
@@ -155,15 +157,15 @@ const OperatorsList = ({ onViewDetails }) => {
   });
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+    <div className="bg-surface rounded-2xl shadow-lg p-6 border border-border">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-          <FaUsers className="mr-3 text-primary" />
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-text flex items-center">
+          <LuUsers aria-hidden="true" className="mr-3 text-brand" />
           Tour Operators
         </h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors">
-          <FaPlus />
+        <button className="flex items-center space-x-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-on-brand shadow-sm transition-opacity hover:opacity-90">
+          <LuPlus aria-hidden="true" />
           <span>Add Operator</span>
         </button>
       </div>
@@ -171,19 +173,19 @@ const OperatorsList = ({ onViewDetails }) => {
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
-          <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          <LuSearch aria-hidden="true" className="absolute left-3 top-3 text-text-muted" />
           <input
             type="text"
             placeholder="Search by name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
+            className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-surface text-text focus:ring-2 focus:ring-brand"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Status</option>
           <option value="active">Active Only</option>
@@ -195,14 +197,14 @@ const OperatorsList = ({ onViewDetails }) => {
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Name</th>
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Email</th>
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Phone</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Status</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Assigned Packages</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Upcoming Departures</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+            <tr className="border-b-2 border-border">
+              <th className={thClass}>Name</th>
+              <th className={thClass}>Email</th>
+              <th className={thClass}>Phone</th>
+              <th className={thClass}>Status</th>
+              <th className={thClass}>Assigned Packages</th>
+              <th className={thClass}>Upcoming Departures</th>
+              <th className={thClass}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -212,77 +214,77 @@ const OperatorsList = ({ onViewDetails }) => {
               return (
                 <tr
                   key={operator._id}
-                  className={`border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    hasWarning ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''
+                  className={`border-b border-border hover:bg-surface-muted transition-colors ${
+                    hasWarning ? 'bg-warning/10' : ''
                   }`}
                 >
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex items-center">
-                      <div className="font-medium text-gray-900 dark:text-white">
+                      <div className="font-medium text-text">
                         {operator.fullName}
                       </div>
                       {hasWarning && (
-                        <FaExclamationTriangle 
-                          className="ml-2 text-yellow-600 dark:text-yellow-400" 
+                        <LuTriangleAlert aria-hidden="true" 
+                          className="ml-2 text-warning" 
                           title="Inactive operator with future departures"
                         />
                       )}
                     </div>
                   </td>
-                  <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                  <td className={tdClass}>
                     {operator.email}
                   </td>
-                  <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                  <td className={tdClass}>
                     {operator.phone || 'N/A'}
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <button
                       onClick={() => toggleOperatorStatus(operator._id, operator.isActive)}
                       className={`flex items-center justify-center mx-auto px-3 py-1 rounded-full text-sm font-semibold transition-colors ${
                         operator.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                          : 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-surface-muted text-text'
                       }`}
                     >
                       {operator.isActive ? (
                         <>
-                          <FaToggleOn className="mr-1" /> Active
+                          <LuToggleRight aria-hidden="true" className="mr-1" /> Active
                         </>
                       ) : (
                         <>
-                          <FaToggleOff className="mr-1" /> Inactive
+                          <LuToggleLeft aria-hidden="true" className="mr-1" /> Inactive
                         </>
                       )}
                     </button>
                   </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-full font-semibold">
+                  <td className={tdClass}>
+                    <span className="inline-flex items-center justify-center w-8 h-8 bg-info/10 text-info rounded-full font-semibold">
                       {operator.assignedPackages}
                     </span>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-semibold ${
                       operator.upcomingDepartures > 0
-                        ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400'
-                        : 'bg-gray-100 dark:bg-gray-900/20 text-gray-700 dark:text-gray-400'
+                        ? 'bg-warning/10 text-warning'
+                        : 'bg-surface-muted text-text'
                     }`}>
                       {operator.upcomingDepartures}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex items-center justify-center space-x-2">
                       <button
                         onClick={() => onViewDetails && onViewDetails(operator)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                        className="p-2 text-info hover:bg-info/10 rounded transition-colors"
                         title="View Details"
                       >
-                        <FaEye />
+                        <LuEye aria-hidden="true" />
                       </button>
                       <button
-                        className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                        className="p-2 text-success hover:bg-success/10 rounded transition-colors"
                         title="Edit"
                       >
-                        <FaEdit />
+                        <LuPencil aria-hidden="true" />
                       </button>
                     </div>
                   </td>
@@ -294,7 +296,7 @@ const OperatorsList = ({ onViewDetails }) => {
 
         {filteredOperators.length === 0 && !loading && (
           <div className="text-center py-12">
-            <div className="text-gray-500 dark:text-gray-400 mb-4">
+            <div className="text-text-muted mb-4">
               {searchTerm || statusFilter !== 'all' 
                 ? 'No operators match your filters' 
                 : operators.length === 0 
@@ -302,7 +304,7 @@ const OperatorsList = ({ onViewDetails }) => {
                   : 'No operators found'}
             </div>
             {operators.length === 0 && !searchTerm && statusFilter === 'all' && (
-              <div className="text-sm text-gray-400 dark:text-gray-500">
+              <div className="text-sm text-text-muted">
                 <p className="mb-2">No users with "tour_operator" or "operator" role exist yet.</p>
                 <p>Add users with operator role from User Management or create a new operator.</p>
               </div>
@@ -312,24 +314,24 @@ const OperatorsList = ({ onViewDetails }) => {
       </div>
 
       {loading && (
-        <div className="text-center py-8 text-primary font-semibold">Loading...</div>
+        <div className="text-center py-8 text-brand font-semibold">Loading...</div>
       )}
 
       {/* Stats Summary */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg">
-          <div className="text-sm text-blue-600 dark:text-blue-400 font-semibold">Total Operators</div>
-          <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{operators.length}</div>
+        <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+          <div className="text-sm text-info font-semibold">Total Operators</div>
+          <div className="text-2xl font-bold text-info">{operators.length}</div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg">
-          <div className="text-sm text-green-600 dark:text-green-400 font-semibold">Active Operators</div>
-          <div className="text-2xl font-bold text-green-900 dark:text-green-300">
+        <div className="p-4 bg-gradient-to-br from-success/10 to-success/5 rounded-lg">
+          <div className="text-sm text-success font-semibold">Active Operators</div>
+          <div className="text-2xl font-bold text-success">
             {operators.filter(op => op.isActive).length}
           </div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg">
-          <div className="text-sm text-orange-600 dark:text-orange-400 font-semibold">With Future Departures</div>
-          <div className="text-2xl font-bold text-orange-900 dark:text-orange-300">
+        <div className="p-4 bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg">
+          <div className="text-sm text-warning font-semibold">With Future Departures</div>
+          <div className="text-2xl font-bold text-warning">
             {operators.filter(op => op.upcomingDepartures > 0).length}
           </div>
         </div>

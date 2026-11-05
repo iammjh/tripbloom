@@ -1,7 +1,9 @@
+import { LuBan, LuEye, LuPencil, LuPlus, LuSearch, LuShield, LuToggleLeft, LuToggleRight, LuUser, LuUserCog, LuUsers } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaUsers, FaPlus, FaEye, FaEdit, FaToggleOn, FaToggleOff, FaSearch, FaUserShield, FaUserTie, FaUser, FaBan } from 'react-icons/fa';
+
 import UserEditModal from './UserEditModal';
+import { thClass, tdClass } from './admin/AdminPrimitives.jsx';
 
 const UsersList = ({ onViewDetails }) => {
   const [users, setUsers] = useState([]);
@@ -25,7 +27,7 @@ const UsersList = ({ onViewDetails }) => {
       const usersWithData = await Promise.all(
         (res.data.users || []).map(async (user) => {
           try {
-            // Get bookings count (mock for now)
+            // Get bookings count for this customer
             let bookingsCount = 0;
             let activeBookingsCount = 0;
             try {
@@ -37,9 +39,9 @@ const UsersList = ({ onViewDetails }) => {
                 ['PENDING', 'CONFIRMED'].includes(b.status)
               ).length || 0;
             } catch (err) {
-              // Bookings endpoint not available - use mock data
-              bookingsCount = Math.floor(Math.random() * 10);
-              activeBookingsCount = Math.floor(Math.random() * 3);
+              // Bookings could not be loaded; leave the counts unknown rather than guessing
+              bookingsCount = null;
+              activeBookingsCount = null;
             }
 
             // Get future departures if operator
@@ -53,8 +55,8 @@ const UsersList = ({ onViewDetails }) => {
               }
             }
 
-            // Mock last login
-            const lastLogin = new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000);
+            // The backend does not record last login, so no value is shown
+            const lastLogin = null;
 
             return {
               ...user,
@@ -110,16 +112,16 @@ const UsersList = ({ onViewDetails }) => {
 
   const getRoleIcon = (role) => {
     const roleUpper = role.toUpperCase();
-    if (roleUpper === 'ADMIN') return FaUserShield;
-    if (roleUpper === 'TOUR_OPERATOR' || roleUpper === 'OPERATOR') return FaUserTie;
-    return FaUser;
+    if (roleUpper === 'ADMIN') return LuShield;
+    if (roleUpper === 'TOUR_OPERATOR' || roleUpper === 'OPERATOR') return LuUserCog;
+    return LuUser;
   };
 
   const getRoleColor = (role) => {
     const roleUpper = role.toUpperCase();
-    if (roleUpper === 'ADMIN') return 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400';
-    if (roleUpper === 'TOUR_OPERATOR' || roleUpper === 'OPERATOR') return 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400';
-    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400';
+    if (roleUpper === 'ADMIN') return 'bg-danger/10 text-danger';
+    if (roleUpper === 'TOUR_OPERATOR' || roleUpper === 'OPERATOR') return 'bg-warning/10 text-warning';
+    return 'bg-info/10 text-info';
   };
 
   const formatDate = (date) => {
@@ -132,7 +134,7 @@ const UsersList = ({ onViewDetails }) => {
   };
 
   const formatLastLogin = (date) => {
-    if (!date) return 'Never';
+    if (!date) return 'Not tracked';
     const now = new Date();
     const loginDate = new Date(date);
     const diffMs = now - loginDate;
@@ -146,11 +148,11 @@ const UsersList = ({ onViewDetails }) => {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+    <div className="bg-surface rounded-2xl shadow-lg p-6 border border-border">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-          <FaUsers className="mr-3 text-primary" />
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-text flex items-center">
+          <LuUsers aria-hidden="true" className="mr-3 text-brand" />
           User Management
         </h2>
         <button 
@@ -158,9 +160,9 @@ const UsersList = ({ onViewDetails }) => {
             setSelectedUser(null);
             setShowEditModal(true);
           }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors"
+          className="flex items-center space-x-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-on-brand shadow-sm transition-opacity hover:opacity-90"
         >
-          <FaPlus />
+          <LuPlus aria-hidden="true" />
           <span>Add User</span>
         </button>
       </div>
@@ -168,19 +170,19 @@ const UsersList = ({ onViewDetails }) => {
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="relative">
-          <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          <LuSearch aria-hidden="true" className="absolute left-3 top-3 text-text-muted" />
           <input
             type="text"
             placeholder="Search by name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
+            className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-surface text-text focus:ring-2 focus:ring-brand"
           />
         </div>
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Roles</option>
           <option value="CUSTOMER">Customers</option>
@@ -190,7 +192,7 @@ const UsersList = ({ onViewDetails }) => {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Status</option>
           <option value="active">Active Only</option>
@@ -202,14 +204,14 @@ const UsersList = ({ onViewDetails }) => {
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Name</th>
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Email</th>
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Role(s)</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Status</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Created Date</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Last Login</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+            <tr className="border-b-2 border-border">
+              <th className={thClass}>Name</th>
+              <th className={thClass}>Email</th>
+              <th className={thClass}>Role(s)</th>
+              <th className={thClass}>Status</th>
+              <th className={thClass}>Created Date</th>
+              <th className={thClass}>Last Login</th>
+              <th className={thClass}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -219,24 +221,24 @@ const UsersList = ({ onViewDetails }) => {
               return (
                 <tr
                   key={user._id}
-                  className={`border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    !user.isActive ? 'bg-red-50/30 dark:bg-red-900/10' : ''
+                  className={`border-b border-border hover:bg-surface-muted transition-colors ${
+                    !user.isActive ? 'bg-danger/10' : ''
                   }`}
                 >
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex items-center">
-                      <div className="font-medium text-gray-900 dark:text-white">
+                      <div className="font-medium text-text">
                         {user.fullName}
                       </div>
                       {!user.isActive && (
-                        <FaBan className="ml-2 text-red-600 dark:text-red-400" title="Blocked/Inactive user" />
+                        <LuBan aria-hidden="true" className="ml-2 text-danger" title="Blocked/Inactive user" />
                       )}
                     </div>
                   </td>
-                  <td className="py-4 px-4 text-gray-600 dark:text-gray-400">
+                  <td className={tdClass}>
                     {user.email}
                   </td>
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex flex-wrap gap-1">
                       {user.roles?.map((role, idx) => {
                         const RoleIcon = getRoleIcon(role);
@@ -252,51 +254,51 @@ const UsersList = ({ onViewDetails }) => {
                       })}
                     </div>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <button
                       onClick={() => toggleUserStatus(user._id, user.isActive)}
                       className={`flex items-center justify-center mx-auto px-3 py-1 rounded-full text-sm font-semibold transition-colors ${
                         user.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-danger/10 text-danger'
                       }`}
                       title={hasActiveData && user.isActive ? 'Warning: User has active bookings/departures' : ''}
                     >
                       {user.isActive ? (
                         <>
-                          <FaToggleOn className="mr-1" /> Active
+                          <LuToggleRight aria-hidden="true" className="mr-1" /> Active
                         </>
                       ) : (
                         <>
-                          <FaToggleOff className="mr-1" /> Blocked
+                          <LuToggleLeft aria-hidden="true" className="mr-1" /> Blocked
                         </>
                       )}
                     </button>
                   </td>
-                  <td className="py-4 px-4 text-center text-sm text-gray-600 dark:text-gray-400">
+                  <td className={tdClass}>
                     {formatDate(user.createdAt)}
                   </td>
-                  <td className="py-4 px-4 text-center text-sm text-gray-600 dark:text-gray-400">
+                  <td className={tdClass}>
                     {formatLastLogin(user.lastLogin)}
                   </td>
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex items-center justify-center space-x-2">
                       <button
                         onClick={() => onViewDetails && onViewDetails(user)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                        className="p-2 text-info hover:bg-info/10 rounded transition-colors"
                         title="View Details"
                       >
-                        <FaEye />
+                        <LuEye aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => {
                           setSelectedUser(user);
                           setShowEditModal(true);
                         }}
-                        className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                        className="p-2 text-success hover:bg-success/10 rounded transition-colors"
                         title="Edit"
                       >
-                        <FaEdit />
+                        <LuPencil aria-hidden="true" />
                       </button>
                     </div>
                   </td>
@@ -307,7 +309,7 @@ const UsersList = ({ onViewDetails }) => {
         </table>
 
         {filteredUsers.length === 0 && !loading && (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <div className="text-center py-12 text-text-muted">
             {searchTerm || roleFilter !== 'all' || statusFilter !== 'all' 
               ? 'No users match your filters' 
               : 'No users found'}
@@ -316,30 +318,30 @@ const UsersList = ({ onViewDetails }) => {
       </div>
 
       {loading && (
-        <div className="text-center py-8 text-primary font-semibold">Loading...</div>
+        <div className="text-center py-8 text-brand font-semibold">Loading...</div>
       )}
 
       {/* Stats Summary */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg">
-          <div className="text-sm text-blue-600 dark:text-blue-400 font-semibold">Total Users</div>
-          <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{users.length}</div>
+        <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+          <div className="text-sm text-info font-semibold">Total Users</div>
+          <div className="text-2xl font-bold text-info">{users.length}</div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg">
-          <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold">Customers</div>
-          <div className="text-2xl font-bold text-purple-900 dark:text-purple-300">
+        <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+          <div className="text-sm text-info font-semibold">Customers</div>
+          <div className="text-2xl font-bold text-info">
             {users.filter(u => u.roles?.some(r => r.toUpperCase() === 'CUSTOMER')).length}
           </div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg">
-          <div className="text-sm text-green-600 dark:text-green-400 font-semibold">Active Users</div>
-          <div className="text-2xl font-bold text-green-900 dark:text-green-300">
+        <div className="p-4 bg-gradient-to-br from-success/10 to-success/5 rounded-lg">
+          <div className="text-sm text-success font-semibold">Active Users</div>
+          <div className="text-2xl font-bold text-success">
             {users.filter(u => u.isActive).length}
           </div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 rounded-lg">
-          <div className="text-sm text-red-600 dark:text-red-400 font-semibold">Blocked Users</div>
-          <div className="text-2xl font-bold text-red-900 dark:text-red-300">
+        <div className="p-4 bg-gradient-to-br from-danger/10 to-danger/5 rounded-lg">
+          <div className="text-sm text-danger font-semibold">Blocked Users</div>
+          <div className="text-2xl font-bold text-danger">
             {users.filter(u => !u.isActive).length}
           </div>
         </div>

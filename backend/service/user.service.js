@@ -42,22 +42,21 @@ export async function createUser({ fullName, email, phone, passwordHash, roles, 
 }
 
 // Update user info (admin only)
-export async function updateUser({ userId, fullName, phone, roles, isActive }) {
+// Roles and activation change only through the audited services in admin.service.js.
+export async function updateUser({ userId, fullName, phone }) {
   const update = {};
   if (fullName) update.fullName = fullName;
   if (phone) update.phone = phone;
-  if (roles) update.roles = roles;
-  if (typeof isActive === 'boolean') update.isActive = isActive;
   const user = await User.findByIdAndUpdate(userId, update, { new: true, fields: '-passwordHash' });
   if (!user) return { error: 'User not found.' };
-  return { user };
+  return { user: user.toObject ? (({ passwordHash, ...safe }) => safe)(user.toObject()) : user };
 }
 
 // Deactivate user (soft delete)
 export async function deactivateUser({ userId }) {
   const user = await User.findByIdAndUpdate(userId, { isActive: false }, { new: true, fields: '-passwordHash' });
   if (!user) return { error: 'User not found.' };
-  return { user };
+  return { user: user.toObject ? (({ passwordHash, ...safe }) => safe)(user.toObject()) : user };
 }
 
 
@@ -74,7 +73,10 @@ function isBcryptHash(value) {
   return typeof value === 'string' && /^\$2[aby]\$\d{2}\$/.test(value);
 }
 
-export async function registerUser({ fullName, email, phone, passwordHash, roles }) {
+export async function registerUser({ fullName, email, phone, passwordHash, roles = [ROLES.CUSTOMER] }) {
+  if (!Array.isArray(roles) || !roles.length || roles.some(role => typeof role !== 'string' || role.toLowerCase() !== 'customer')) return { error: 'Public signup supports customer accounts only.' };
+  roles = [ROLES.CUSTOMER];
+  if (typeof fullName !== 'string' || typeof email !== 'string' || typeof passwordHash !== 'string') return { error: 'Name, email and password must be text.' };
   if (!fullName || !email || !passwordHash || !roles) {
     return { error: 'fullName, email, passwordHash, and roles are required.' };
   }
@@ -108,6 +110,7 @@ export async function registerUser({ fullName, email, phone, passwordHash, roles
 
 
 export async function loginUser({ email, passwordHash }) {
+  if (typeof email !== 'string' || typeof passwordHash !== 'string') return { error: 'Email and password must be text.' };
   if (!email || !passwordHash) {
     return { error: 'Email and passwordHash are required.' };
   }
@@ -134,7 +137,7 @@ export async function loginUser({ email, passwordHash }) {
   // Generate JWT token
   const token = jwt.sign(
     { id: user._id, email: user.email, roles: user.roles },
-    process.env.JWT_SECRET || 'your_jwt_secret_key_here',
+    process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
   return { 
@@ -175,7 +178,7 @@ export async function unsavePackageForUser({ userId, packageId }) {
 export async function getUserById({ userId }) {
   const user = await User.findById(userId, '-passwordHash');
   if (!user) return { error: 'User not found.' };
-  return { user };
+  return { user: user.toObject ? (({ passwordHash, ...safe }) => safe)(user.toObject()) : user };
 }
 
 // Update own profile (customer/operator)
@@ -205,11 +208,12 @@ export async function updateProfile({ userId, fullName, phone, age }) {
   
   console.log('updateProfile - Saved user age:', user.age);
   
-  return { user };
+  return { user: user.toObject ? (({ passwordHash, ...safe }) => safe)(user.toObject()) : user };
 }
 
 // Change password
 export async function changePassword({ userId, currentPassword, newPassword }) {
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 6) return { error: 'Provide the current password and a new password of at least six characters.' };
   if (!currentPassword || !newPassword) {
     return { error: 'Current password and new password are required.' };
   }

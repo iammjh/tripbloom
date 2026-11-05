@@ -1,6 +1,10 @@
 // tourPackage.service.js
 import { TourPackage, TOUR_PACKAGE_TYPES_ENUM, PERSONAL_CATEGORIES_ENUM } from '../model/tourPackage.model.js';
+import { PACKAGE_CODE_PATTERN, deriveCode, uniquePackageCode } from './bookingCode.service.js';
 import { GroupDeparture } from '../model/groupDeparture.model.js';
+import mongoose from 'mongoose';
+
+const PUBLIC_PACKAGE_FIELDS = 'title description type category basePrice defaultDays defaultNights inclusions destinations extras photos isInternational mapLocation isActive createdAt';
 
 // Helper to escape user input for use in RegExp
 function escapeRegex(text) {
@@ -8,7 +12,7 @@ function escapeRegex(text) {
 }
 
 // Create new package
-export async function createTourPackage({ title, description, type, category, basePrice, defaultDays, defaultNights, inclusions, destinations, extras }) {
+export async function createTourPackage({ title, description, type, code, category, basePrice, defaultDays, defaultNights, inclusions, destinations, extras, photos, isInternational, mapLocation, isActive }) {
   if (!title || !type || !basePrice) {
     return { error: 'title, type, and basePrice are required.' };
   }
@@ -25,8 +29,31 @@ export async function createTourPackage({ title, description, type, category, ba
   if (typeof defaultDays !== 'number' || typeof defaultNights !== 'number') {
     return { error: 'defaultDays and defaultNights are required and must be numbers.' };
   }
+  if (photos !== undefined && (!Array.isArray(photos) || photos.some(photo => typeof photo !== 'string'))) {
+    return { error: 'photos must be an array of image URLs.' };
+  }
+  if (isInternational !== undefined && typeof isInternational !== 'boolean') {
+    return { error: 'isInternational must be a boolean.' };
+  }
+  if (isActive !== undefined && typeof isActive !== 'boolean') {
+    return { error: 'isActive must be a boolean.' };
+  }
+  if (mapLocation != null && (
+    typeof mapLocation !== 'object' ||
+    !Number.isFinite(mapLocation.lat) || mapLocation.lat < -90 || mapLocation.lat > 90 ||
+    !Number.isFinite(mapLocation.lng) || mapLocation.lng < -180 || mapLocation.lng > 180 ||
+    (mapLocation.zoom !== undefined && (!Number.isFinite(mapLocation.zoom) || mapLocation.zoom < 1 || mapLocation.zoom > 20))
+  )) {
+    return { error: 'mapLocation must contain valid latitude, longitude, and optional zoom (1–20).' };
+  }
+  // Package code for booking numbers: a supplied code must be free; otherwise the title initials are used, with a suffix if needed.
+  const requested = code ? String(code).trim().toUpperCase() : null;
+  if (requested && !PACKAGE_CODE_PATTERN.test(requested)) return { error: 'Package code must be 2 to 5 capital letters.' };
+  const packageCode = await uniquePackageCode(requested || deriveCode(title), { TourPackage });
+  if (!packageCode || (requested && packageCode !== requested)) return { error: 'That package code is already in use.' };
   const pkg = new TourPackage({
     title,
+    code: packageCode,
     description,
     type,
     category,
@@ -35,7 +62,11 @@ export async function createTourPackage({ title, description, type, category, ba
     defaultNights,
     inclusions,
     destinations,
-    extras
+    extras,
+    photos,
+    isInternational,
+    mapLocation,
+    isActive
   });
   await pkg.save();
   return { package: pkg };
@@ -53,6 +84,12 @@ export async function updateTourPackage({ packageId, ...updates }) {
     if (updates.type === 'GROUP' && updates.category) {
       return { error: 'Category must be null for GROUP type.' };
     }
+  }
+  if (updates.code !== undefined) {
+    const requested = String(updates.code || '').trim().toUpperCase();
+    if (!PACKAGE_CODE_PATTERN.test(requested)) return { error: 'Package code must be 2 to 5 capital letters.' };
+    if (await TourPackage.exists({ code: requested, _id: { $ne: packageId } })) return { error: 'That package code is already in use.' };
+    updates.code = requested;
   }
   const pkg = await TourPackage.findByIdAndUpdate(packageId, updates, { new: true });
   if (!pkg) return { error: 'Package not found.' };
@@ -85,6 +122,16 @@ export async function setTourPackageActive({ packageId, isActive, force = false 
 // Get package by ID
 export async function getTourPackage(packageId) {
   return await TourPackage.findById(packageId);
+}
+
+// Public reads expose active catalog fields, without internal operator assignments.
+export async function getPublicTourPackage(packageId) {
+  if (!mongoose.isValidObjectId(packageId)) {
+    return { error: 'Invalid package ID.', status: 400 };
+  }
+  const pkg = await TourPackage.findOne({ _id: packageId, isActive: true }).select(PUBLIC_PACKAGE_FIELDS);
+  if (!pkg) return { error: 'Package not found.', status: 404 };
+  return { package: pkg };
 }
 
 // List all packages

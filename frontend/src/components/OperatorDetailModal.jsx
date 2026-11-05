@@ -1,343 +1,214 @@
 import React, { useState, useEffect } from 'react';
-import ReactDOM from 'react-dom';
+import { LuCalendarDays, LuCircleCheck, LuMail, LuPhone, LuTriangleAlert, LuUserCog, LuUsers, LuWallet } from 'react-icons/lu';
 import axios from 'axios';
-import { FaTimes, FaUser, FaEnvelope, FaPhone, FaCalendarAlt, FaStar, FaExclamationTriangle, FaUsersCog } from 'react-icons/fa';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import Badge from './ui/Badge.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
+import { userMessage } from '../utils/errorMessage.js';
 
-const OperatorDetailModal = ({ isOpen, onClose, operator, onEdit }) => {
-    const [activeTab, setActiveTab] = useState('profile');
-    useEffect(() => {
-      if (isOpen) setActiveTab('profile');
-    }, [isOpen]);
-  const [departures, setDepartures] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showReassignModal, setShowReassignModal] = useState(false);
-  // Add callback for viewing departure details
-  const onViewDeparture = typeof window !== 'undefined' && window.onViewDeparture ? window.onViewDeparture : null;
+const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const DEPARTURE_TONE = { OPEN: 'success', FULL: 'warning', CLOSED: 'neutral', CANCELLED: 'danger' };
 
-  useEffect(() => {
-    if (isOpen && operator) {
-      console.log('[OperatorDetailModal] Modal opened with operator:', {
-        id: operator._id,
-        name: operator.fullName,
-        upcomingDepartures: operator.upcomingDepartures,
-        assignedPackages: operator.assignedPackages
-      });
-      fetchOperatorDepartures();
-    }
-  }, [isOpen, operator]);
+// Literal class names so Tailwind keeps them.
+const STAT_TEXT = { brand: 'text-brand', success: 'text-success' };
 
-  const fetchOperatorDepartures = async () => {
-    setLoading(true);
-    try {
-      console.log(`[OperatorDetailModal] Fetching departures for operator: ${operator._id}`);
-      const res = await axios.get(`/api/group-departure/operator/${operator._id}/future`);
-      console.log(`[OperatorDetailModal] API Response:`, res.data);
-      // Sort departures by upcoming close event date (startDate ascending)
-      const sortedDepartures = (res.data.departures || []).sort((a, b) => {
-        return new Date(a.startDate) - new Date(b.startDate);
-      });
-      console.log(`[OperatorDetailModal] Sorted departures (${sortedDepartures.length}):`, sortedDepartures);
-      setDepartures(sortedDepartures);
-    } catch (err) {
-      console.error('[OperatorDetailModal] Failed to fetch departures:', err);
-    }
-    setLoading(false);
-  };
-
-  const handleReassignAll = async () => {
-    try {
-      await axios.post(`/api/group-departure/operator/${operator._id}/remove-future`);
-      setShowReassignModal(false);
-      onClose();
-      // Refresh parent list
-    } catch (err) {
-      console.error('Failed to reassign departures:', err);
-    }
-  };
-
-  if (!isOpen || !operator) return null;
-
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      OPEN: 'text-green-600 bg-green-100 dark:bg-green-900/20',
-      FULL: 'text-orange-600 bg-orange-100 dark:bg-orange-900/20',
-      CANCELLED: 'text-red-600 bg-red-100 dark:bg-red-900/20',
-      CLOSED: 'text-gray-600 bg-gray-100 dark:bg-gray-900/20'
-    };
-    return colors[status] || 'text-blue-600 bg-blue-100';
-  };
-
-  // Mock performance data
-  const performanceStats = {
-    averageRating: 4.7,
-    totalToursCompleted: 28,
-    totalCustomersServed: 342,
-    onTimePercentage: 96
-  };
-
-  const modalContent = (
-    <div className="fixed inset-0 overflow-y-auto" style={{ zIndex: 99999 }}>
-      <div className="flex min-h-screen items-center justify-center p-4">
-        {/* Backdrop */}
-        <div 
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity" 
-          onClick={onClose}
-        ></div>
-        
-        {/* Modal Content */}
-        <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-scale-in" style={{ zIndex: 99999 }}>
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
-          >
-            <FaTimes size={24} />
-          </button>
-
-          {/* Header */}
-          <div className="bg-gradient-to-r from-orange-600 to-orange-700 p-8 text-white">
-            <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold">
-                {operator.fullName.charAt(0)}
-              </div>
-              <div>
-                <h2 className="text-3xl font-bold mb-1">{operator.fullName}</h2>
-                <p className="text-orange-100">Tour Operator</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="border-b border-gray-200 dark:border-gray-700 flex items-center">
-            <button
-              className={`px-6 py-4 font-semibold focus:outline-none transition-colors ${activeTab === 'profile' ? 'border-b-4 border-orange-600 text-orange-700 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}
-              onClick={() => setActiveTab('profile')}
-            >
-              Profile
-            </button>
-            <button
-              className={`px-6 py-4 font-semibold focus:outline-none transition-colors ${activeTab === 'assignments' ? 'border-b-4 border-green-600 text-green-700 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}
-              onClick={() => setActiveTab('assignments')}
-            >
-              Operator Assignments
-            </button>
-          </div>
-
-          <div className="p-8 max-h-[70vh] overflow-y-auto">
-            {activeTab === 'profile' && (
-              <>
-                {/* Contact Info Section */}
-                <div className="mb-8">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Contact Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <FaEnvelope className="text-primary text-xl" />
-                      <div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Email</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">{operator.email}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <FaPhone className="text-primary text-xl" />
-                      <div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Phone</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">{operator.phone || 'Not provided'}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <FaUsersCog className="text-primary text-xl" />
-                      <div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Roles</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {operator.roles?.join(', ') || 'Operator'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <div className={`w-3 h-3 rounded-full ${operator.isActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                      <div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Status</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {operator.isActive ? 'Active' : 'Inactive'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Performance Stats */}
-                <div className="mb-8">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Past Performance</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg text-center">
-                      <FaStar className="text-yellow-600 dark:text-yellow-400 text-2xl mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">
-                        {performanceStats.averageRating}
-                      </div>
-                      <div className="text-sm text-yellow-700 dark:text-yellow-400">Avg Rating</div>
-                    </div>
-                    <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">
-                        {performanceStats.totalToursCompleted}
-                      </div>
-                      <div className="text-sm text-blue-700 dark:text-blue-400">Tours Completed</div>
-                    </div>
-                    <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-green-900 dark:text-green-300">
-                        {performanceStats.totalCustomersServed}
-                      </div>
-                      <div className="text-sm text-green-700 dark:text-green-400">Customers Served</div>
-                    </div>
-                    <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-purple-900 dark:text-purple-300">
-                        {performanceStats.onTimePercentage}%
-                      </div>
-                      <div className="text-sm text-purple-700 dark:text-purple-400">On-Time Rate</div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {activeTab === 'assignments' && (
-              <>
-                {/* Assigned Departures */}
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">Assigned Group Departures</h3>
-                    {!operator.isActive && departures.length > 0 && (
-                      <button
-                        onClick={() => setShowReassignModal(true)}
-                        className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
-                      >
-                        <FaExclamationTriangle />
-                        <span>Reassign All</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {loading ? (
-                    <div className="text-center py-8 text-primary">Loading departures...</div>
-                  ) : departures.length > 0 ? (
-                    <div className="space-y-3">
-                      {departures.map((departure) => (
-                        <button
-                          key={departure._id}
-                          className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:shadow-md transition-shadow w-full text-left"
-                          onClick={() => {
-                            if (onViewDeparture) {
-                              onViewDeparture(departure);
-                            }
-                          }}
-                        >
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-900 dark:text-white mb-1">
-                              {departure.packageId?.title || departure.packageId?.name || 'Package'}
-                            </div>
-                            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 space-x-4">
-                              <span className="flex items-center">
-                                <FaCalendarAlt className="mr-2" />
-                                {formatDate(departure.startDate)} - {formatDate(departure.endDate)}
-                              </span>
-                              <span>
-                                Seats: {departure.bookedSeats}/{departure.totalSeats}
-                              </span>
-                            </div>
-                          </div>
-                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(departure.status)}`}>
-                            {departure.status}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      No upcoming departures assigned
-                    </div>
-                  )}
-                </div>
-
-                {/* Warning for inactive operator with departures */}
-                {!operator.isActive && departures.length > 0 && (
-                  <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-600 rounded">
-                    <div className="flex items-start">
-                      <FaExclamationTriangle className="text-yellow-600 dark:text-yellow-400 mt-1 mr-3" />
-                      <div>
-                        <div className="font-semibold text-yellow-800 dark:text-yellow-300">Warning</div>
-                        <div className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
-                          This operator is inactive but still has {departures.length} upcoming departure(s) assigned. 
-                          Consider reassigning these departures to active operators.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Actions */}
-            <div className="flex space-x-4">
-              <button
-                onClick={onClose}
-                className="px-6 py-3 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  if (onEdit) {
-                    onEdit(operator);
-                  }
-                }}
-                className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-semibold"
-              >
-                Edit Operator
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Reassign Confirmation Modal */}
-      {showReassignModal && (
-        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 100000 }}>
-          <div className="fixed inset-0 bg-black/80" onClick={() => setShowReassignModal(false)}></div>
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Reassign All Departures</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              This will remove <strong>{operator.fullName}</strong> from all {departures.length} upcoming departure(s). 
-              You'll need to manually assign new operators to these departures.
-            </p>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={handleReassignAll}
-                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-semibold"
-              >
-                Confirm Reassign
-              </button>
-              <button
-                onClick={() => setShowReassignModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+function Stat({ label, value, tone = 'brand' }) {
+  return (
+    <div className="glass rounded-2xl p-4 text-center">
+      <p className={`font-display text-2xl font-semibold ${STAT_TEXT[tone]}`}>{value}</p>
+      <p className="mt-1 text-sm text-text-muted">{label}</p>
     </div>
   );
+}
 
-  return ReactDOM.createPortal(modalContent, document.body);
+function InfoTile({ icon: Icon, label, value }) {
+  return (
+    <div className="glass flex items-center gap-3 rounded-2xl p-4">
+      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-brand/10 text-brand">
+        <Icon aria-hidden="true" className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm text-text-muted">{label}</p>
+        <p className="truncate font-semibold text-text">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// Operator profile: contact details, past performance and upcoming departures. Inactive operators can be removed from their upcoming departures.
+const OperatorDetailModal = ({ isOpen, onClose, operator, onEdit, onUserUpdated }) => {
+  const [activeTab, setActiveTab] = useState('profile');
+  const [departures, setDepartures] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [opStats, setOpStats] = useState(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab('profile');
+      setDepartures([]);
+      setLoadError('');
+    }
+  }, [isOpen, operator?._id]);
+
+  useEffect(() => {
+    if (!isOpen || !operator?._id) return;
+    axios.get('/api/group-departure/operator/' + operator._id + '/future')
+      .then(res => setDepartures([...(res.data.departures || [])].sort((a, b) => new Date(a.startDate) - new Date(b.startDate))))
+      .catch(failure => {
+        console.error('Failed to load operator departures:', failure);
+        setLoadError('Upcoming departures could not be loaded.');
+      })
+      .finally(() => setLoading(false));
+    setLoading(true);
+  }, [isOpen, operator?._id]);
+
+  useEffect(() => {
+    if (!isOpen || !operator?._id) return;
+    axios.get('/api/admin/operators/stats')
+      .then(res => setOpStats((res.data.operators || []).find(item => String(item._id) === String(operator._id)) || null))
+      .catch(() => setOpStats(null));
+  }, [isOpen, operator?._id]);
+
+  if (!operator) return null;
+
+  const removeFromUpcoming = async () => {
+    const confirmed = await confirmAction({
+      title: 'Remove from upcoming departures?',
+      message: `${operator.fullName} will be removed from ${departures.length} upcoming departure(s). Those departures will have no operator until you assign another one.`,
+      confirmLabel: 'Confirm removal',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      const res = await axios.post(`/api/group-departure/operator/${operator._id}/remove-future`);
+      notify.message(res.data?.message || 'Operator removed from upcoming departures.');
+      onUserUpdated?.();
+      onClose();
+    } catch (failure) {
+      console.error('Failed to remove operator from departures:', failure);
+      notify.error(userMessage(failure, 'The departures could not be updated. Nothing changed; please try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showRemove = !operator.isActive && departures.length > 0;
+
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={operator.fullName || 'Tour operator'}
+      description="Tour operator profile"
+      size="xl"
+      rootClassName="dark"
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <div className="flex flex-wrap gap-2">
+            {showRemove && (
+              <Button variant="danger" icon={LuUsers} onClick={removeFromUpcoming} loading={busy} disabled={busy}>
+                Remove from departures
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => onEdit?.(operator)} disabled={busy}>Edit operator</Button>
+          </div>
+        </>
+      )}
+    >
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={operator.isActive ? 'success' : 'danger'}>{operator.isActive ? 'Active' : 'Inactive'}</Badge>
+          <Badge tone="info">Tour operator</Badge>
+        </div>
+
+        <div role="tablist" aria-label="Operator sections" className="glass flex flex-wrap gap-1 rounded-full p-1">
+          {[
+            { id: 'profile', label: 'Profile' },
+            { id: 'assignments', label: 'Upcoming departures', count: departures.length },
+          ].map(tab => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition-colors ${selected ? 'bg-brand text-on-brand shadow-sm' : 'text-text-muted hover:text-text'}`}
+              >
+                <span>{tab.label}</span>
+                {tab.count > 0 && <span className={`rounded-full px-2 text-xs ${selected ? 'bg-on-brand/20' : 'bg-surface-muted'}`}>{tab.count}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === 'profile' && (
+          <div className="space-y-6">
+            <section aria-labelledby="operator-contact-heading" className="space-y-3">
+              <h3 id="operator-contact-heading" className="font-display text-base font-semibold text-text">Contact</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoTile icon={LuMail} label="Email" value={operator.email || 'Not provided'} />
+                <InfoTile icon={LuPhone} label="Phone" value={operator.phone || 'Not provided'} />
+                <InfoTile icon={LuUserCog} label="Roles" value={operator.roles?.join(', ') || 'Tour operator'} />
+                <InfoTile icon={LuCalendarDays} label="Status" value={operator.isActive ? 'Active' : 'Inactive'} />
+              </div>
+            </section>
+
+            <section aria-labelledby="operator-performance-heading" className="space-y-3">
+              <h3 id="operator-performance-heading" className="font-display text-base font-semibold text-text">Past performance</h3>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Stat label="Packages assigned" value={opStats ? opStats.packageCount : '—'} />
+                <Stat label="Bookings handled" value={opStats ? opStats.bookingCount : '—'} tone="success" />
+                <Stat label="Net receipts (BDT)" value={opStats ? Number(opStats.totalRevenue || 0).toLocaleString() : '—'} />
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'assignments' && (
+          <section aria-labelledby="operator-departures-heading" className="space-y-4">
+            <h3 id="operator-departures-heading" className="font-display text-base font-semibold text-text">Upcoming group departures</h3>
+
+            {showRemove && (
+              <p role="alert" className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
+                <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-warning" />
+                <span>This operator is inactive but still assigned to {departures.length} upcoming departure(s). Assign another operator to each departure, or remove this operator from them.</span>
+              </p>
+            )}
+
+            {loading && <Skeleton className="h-24 w-full rounded-xl" />}
+            {!loading && loadError && <p role="alert" className="text-sm text-danger">{loadError}</p>}
+            {!loading && !loadError && departures.length === 0 && <EmptyState title="No upcoming departures" description="Departures starting from today that include this operator appear here." />}
+            {!loading && !loadError && departures.length > 0 && (
+              <ul className="space-y-3">
+                {departures.map(departure => (
+                  <li key={departure._id} className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-text">{departure.packageId?.title || departure.packageId?.name || 'Package'}</p>
+                      <p className="text-sm text-text-muted">
+                        {formatDate(departure.startDate)} – {formatDate(departure.endDate)} · Seats {departure.bookedSeats}/{departure.totalSeats}
+                      </p>
+                    </div>
+                    <Badge tone={DEPARTURE_TONE[departure.status] || 'neutral'}>{departure.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+      </div>
+    </Modal>
+  );
 };
 
 export default OperatorDetailModal;

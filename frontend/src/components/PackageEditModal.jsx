@@ -1,20 +1,75 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { LuBanknote, LuCalendarDays, LuGlobe, LuHash, LuImage, LuMapPin, LuPackage, LuPlus, LuRoute, LuSparkles, LuTrash2, LuUsers } from 'react-icons/lu';
 import axios from 'axios';
-import { FaTimes, FaBox, FaMapMarkerAlt, FaDollarSign, FaClock, FaUsers, FaImage, FaFileAlt, FaPlus, FaTrash } from 'react-icons/fa';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import FormField, { fieldAria, inputClass } from './ui/FormField.jsx';
+import { notify } from '../utils/notifyStore.js';
 
-// Destinations Manager Component
+const EMPTY_FORM = {
+  title: '',
+  code: '',
+  description: '',
+  type: 'PERSONAL',
+  category: 'SILVER',
+  basePrice: '',
+  defaultDays: '',
+  defaultNights: '',
+  inclusionsTransport: '',
+  inclusionsHotel: '',
+  inclusionsMeals: '',
+  inclusionsGuide: false,
+  destinations: [],
+  extras: '',
+  photos: [],
+  isActive: true,
+  isInternational: false,
+  mapLat: '',
+  mapLng: '',
+  mapZoom: 12,
+};
+
+const SECTION = 'glass rounded-2xl p-5 sm:p-6';
+const SECTION_TITLE = 'flex items-center gap-3 font-display text-lg font-semibold text-text';
+const ICON_TILE = 'flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-brand/10 text-brand';
+
+// Numbered section heading shared by every part of the editor.
+function Section({ step, icon: Icon, title, hint, children, className = '' }) {
+  return (
+    <section className={`${SECTION} ${className}`}>
+      <header className="mb-5">
+        <h3 className={SECTION_TITLE}>
+          <span className={ICON_TILE}><Icon aria-hidden="true" className="h-4 w-4" /></span>
+          <span>{step}. {title}</span>
+        </h3>
+        {hint && <p className="mt-2 text-sm text-text-muted">{hint}</p>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+// Switch-style card for the yes or no package settings.
+function ToggleCard({ name, checked, onChange, title, description }) {
+  return (
+    <label className={`flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-colors ${checked ? 'border-brand/50 bg-brand/5' : 'border-border hover:bg-surface-muted'}`}>
+      <input type="checkbox" name={name} checked={checked} onChange={onChange} className="mt-1 h-5 w-5 accent-brand" />
+      <span className="min-w-0">
+        <span className="block font-semibold text-text">{title}</span>
+        <span className="mt-1 block text-sm text-text-muted">{description}</span>
+      </span>
+    </label>
+  );
+}
+
+// Itinerary: the places in visiting order, each with a city and country.
 const DestinationsManager = ({ destinations, onChange }) => {
   const addDestination = () => {
     onChange([...destinations, { name: '', country: '', city: '', order: destinations.length + 1 }]);
   };
 
   const removeDestination = (index) => {
-    const updated = destinations.filter((_, i) => i !== index);
-    // Reorder
-    updated.forEach((dest, idx) => {
-      dest.order = idx + 1;
-    });
+    const updated = destinations.filter((_, i) => i !== index).map((dest, idx) => ({ ...dest, order: idx + 1 }));
     onChange(updated);
   };
 
@@ -25,113 +80,70 @@ const DestinationsManager = ({ destinations, onChange }) => {
   };
 
   return (
-    <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Destinations</h3>
-        <button
-          type="button"
-          onClick={addDestination}
-          className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-        >
-          <FaPlus size={12} />
-          <span>Add Destination</span>
-        </button>
-      </div>
-
+    <div>
       {destinations.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-          No destinations added. Click "Add Destination" to add locations.
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-text-muted">
+          No stops yet. Add the places this tour visits, in order.
         </p>
       ) : (
-        <div className="space-y-3">
+        <ol className="space-y-3">
           {destinations.map((dest, index) => (
-            <div key={index} className="flex items-start space-x-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                {dest.order}
-              </div>
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <li key={index} className="grid grid-cols-[auto_1fr] gap-3 rounded-xl bg-surface-muted p-3 sm:grid-cols-[auto_1fr_auto]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand font-bold text-on-brand">{dest.order}</span>
+              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
                 <input
                   type="text"
+                  aria-label={`Stop ${dest.order} place name`}
                   value={dest.name}
                   onChange={(e) => updateDestination(index, 'name', e.target.value)}
-                  placeholder="Place Name"
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  placeholder="Place name"
+                  className={inputClass}
                 />
                 <input
                   type="text"
+                  aria-label={`Stop ${dest.order} city`}
                   value={dest.city || ''}
                   onChange={(e) => updateDestination(index, 'city', e.target.value)}
                   placeholder="City"
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  className={inputClass}
                 />
                 <input
                   type="text"
+                  aria-label={`Stop ${dest.order} country`}
                   value={dest.country || ''}
                   onChange={(e) => updateDestination(index, 'country', e.target.value)}
                   placeholder="Country"
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  className={inputClass}
                 />
               </div>
               <button
                 type="button"
                 onClick={() => removeDestination(index)}
-                className="flex-shrink-0 p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                aria-label={`Remove stop ${dest.order}`}
+                className="col-span-2 flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 text-sm text-danger transition-colors hover:bg-danger/10 sm:col-span-1 sm:min-h-0 sm:w-11"
               >
-                <FaTrash size={14} />
+                <LuTrash2 aria-hidden="true" className="h-4 w-4" />
+                <span className="sm:sr-only">Remove</span>
               </button>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
+      <Button type="button" variant="secondary" icon={LuPlus} className="mt-4" onClick={addDestination}>Add stop</Button>
     </div>
   );
 };
 
 const PackageEditModal = ({ isOpen, onClose, package: packageData, onPackageUpdated }) => {
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    type: 'PERSONAL',
-    category: 'SILVER',
-    basePrice: '',
-    defaultDays: '',
-    defaultNights: '',
-    // Inclusions object
-    inclusionsTransport: '',
-    inclusionsHotel: '',
-    inclusionsMeals: '',
-    inclusionsGuide: false,
-    // Destinations array (as JSON string for editing)
-    destinations: [],
-    // Extras array
-    extras: '',
-    // Photos array
-    photos: [],
-    isActive: true,
-    isInternational: false,
-    // Map location
-    mapLat: '',
-    mapLng: '',
-    mapZoom: 12
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Lock body scroll when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = 'unset';
-      };
-    }
-  }, [isOpen]);
-
   useEffect(() => {
     if (packageData) {
-      // Editing existing package
       setFormData({
         title: packageData.title || '',
+        code: packageData.code || '',
         description: packageData.description || '',
         type: packageData.type || 'PERSONAL',
         category: packageData.type === 'GROUP' ? '' : (packageData.category || 'SILVER'),
@@ -149,31 +161,10 @@ const PackageEditModal = ({ isOpen, onClose, package: packageData, onPackageUpda
         isInternational: packageData.isInternational || false,
         mapLat: packageData.mapLocation?.lat || '',
         mapLng: packageData.mapLocation?.lng || '',
-        mapZoom: packageData.mapLocation?.zoom || 12
+        mapZoom: packageData.mapLocation?.zoom || 12,
       });
     } else {
-      // Creating new package
-      setFormData({
-        title: '',
-        description: '',
-        type: 'PERSONAL',
-        category: 'SILVER',
-        basePrice: '',
-        defaultDays: '',
-        defaultNights: '',
-        inclusionsTransport: '',
-        inclusionsHotel: '',
-        inclusionsMeals: '',
-        inclusionsGuide: false,
-        destinations: [],
-        extras: '',
-        photos: [],
-        isActive: true,
-        isInternational: false,
-        mapLat: '',
-        mapLng: '',
-        mapZoom: 12
-      });
+      setFormData(EMPTY_FORM);
     }
     setError('');
   }, [packageData, isOpen]);
@@ -182,7 +173,7 @@ const PackageEditModal = ({ isOpen, onClose, package: packageData, onPackageUpda
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : (name === 'code' ? value.toUpperCase() : value),
     }));
   };
 
@@ -192,520 +183,267 @@ const PackageEditModal = ({ isOpen, onClose, package: packageData, onPackageUpda
     setError('');
 
     try {
-      // Validate
       if (!formData.title || !formData.description) {
-        setError('Title and description are required');
-        setLoading(false);
+        setError('Add a title and a description.');
         return;
       }
-
       if (!formData.basePrice || parseFloat(formData.basePrice) <= 0) {
-        setError('Valid price is required');
-        setLoading(false);
+        setError('Enter a base price greater than zero (BDT).');
         return;
       }
-
-      if (!formData.defaultDays || parseInt(formData.defaultDays) <= 0) {
-        setError('Default days must be at least 1');
-        setLoading(false);
+      if (!formData.defaultDays || parseInt(formData.defaultDays, 10) <= 0) {
+        setError('The tour needs at least one day.');
+        return;
+      }
+      if (formData.code && !/^[A-Z]{2,5}$/.test(formData.code)) {
+        setError('The package code must be 2 to 5 capital letters, for example RL.');
         return;
       }
 
       const payload = {
         title: formData.title,
+        code: formData.code || undefined,
         description: formData.description,
         type: formData.type,
         basePrice: parseFloat(formData.basePrice),
-        defaultDays: parseInt(formData.defaultDays),
-        defaultNights: parseInt(formData.defaultNights) || 0,
+        defaultDays: parseInt(formData.defaultDays, 10),
+        defaultNights: parseInt(formData.defaultNights, 10) || 0,
         inclusions: {
           transport: formData.inclusionsTransport || '',
           hotel: formData.inclusionsHotel || '',
           meals: formData.inclusionsMeals || '',
-          guide: formData.inclusionsGuide
+          guide: formData.inclusionsGuide,
         },
         destinations: formData.destinations || [],
-        extras: formData.extras.split('\n').filter(e => e.trim()),
+        extras: formData.extras.split('\n').filter(item => item.trim()),
         photos: formData.photos || [],
         isActive: formData.isActive,
-        isInternational: formData.isInternational
+        isInternational: formData.isInternational,
       };
 
-      // Add map location if coordinates are provided
       if (formData.mapLat && formData.mapLng) {
         payload.mapLocation = {
           lat: parseFloat(formData.mapLat),
           lng: parseFloat(formData.mapLng),
-          zoom: parseInt(formData.mapZoom) || 12
+          zoom: parseInt(formData.mapZoom, 10) || 12,
         };
       }
 
-      // Only include category for PERSONAL type packages
-      if (formData.type === 'PERSONAL') {
-        payload.category = formData.category;
-      }
+      if (formData.type === 'PERSONAL') payload.category = formData.category;
 
       if (packageData) {
-        // Update existing package
         await axios.put(`/api/admin/packages/${packageData._id}`, payload);
       } else {
-        // Create new package
         await axios.post('/api/admin/packages', payload);
       }
 
+      notify.message(packageData ? 'Package updated.' : 'Package created.');
       onPackageUpdated();
       onClose();
     } catch (err) {
       console.error('Failed to save package:', err);
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to save package. Please try again.');
+      const message = err.response?.data?.message || err.response?.data?.error || 'The package could not be saved. Nothing changed; please try again.';
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  if (!isOpen) return null;
+  const isGroup = formData.type === 'GROUP';
+  const nights = parseInt(formData.defaultNights, 10) || 0;
+  const days = parseInt(formData.defaultDays, 10) || 0;
+  const previewCode = formData.code || (formData.title ? formData.title.split(/\s+/).filter(Boolean).slice(0, 4).map(word => word[0]).join('').toUpperCase() : 'XX');
 
-  return createPortal(
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full my-8 flex flex-col" style={{ maxHeight: 'calc(100vh - 4rem)' }}>
-        {/* Header - Fixed */}
-        <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 rounded-t-2xl flex items-center justify-between flex-shrink-0">
-          <h2 className="text-2xl font-bold flex items-center">
-            <FaBox className="mr-3" />
-            {packageData ? 'Edit Package' : 'Create New Package'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-          >
-            <FaTimes size={20} />
-          </button>
-        </div>
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={packageData ? 'Edit package' : 'Create a new package'}
+      description={packageData ? packageData.title : 'Fill in the sections below. Required fields are marked with an asterisk.'}
+      size="xl"
+      rootClassName="dark"
+    >
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate={false}>
+        {error && (
+          <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">{error}</p>
+        )}
 
-        {/* Form - Scrollable */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
-          <div className="p-6 space-y-6">
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
+        <div className="grid gap-5 lg:grid-cols-5">
+          <div className="space-y-5 lg:col-span-3">
+            <Section step="1" icon={LuPackage} title="Basics" hint="The title and type shape how the tour appears to customers.">
+              <div className="space-y-5">
+                <FormField id="package-title" label="Package title" required>
+                  <input id="package-title" type="text" name="title" value={formData.title} onChange={handleChange} required placeholder="e.g. Rangamati Lake Escape" className={inputClass} />
+                </FormField>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Title */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Package Title *
-              </label>
-              <input
-                type="text"
-                name="title"
-                value={formData.title}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                placeholder="e.g., Amazing Bali Adventure"
+                <fieldset>
+                  <legend className="mb-2 text-sm font-medium text-text">Tour type <span aria-hidden="true" className="text-danger">*</span></legend>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      { value: 'PERSONAL', label: 'Personal tour', hint: 'Private itinerary, customers can customise it.' },
+                      { value: 'GROUP', label: 'Group tour', hint: 'Fixed departure dates with a set group.' },
+                    ].map(option => (
+                      <label key={option.value} className={`flex cursor-pointer flex-col gap-1 rounded-xl border p-4 transition-colors ${formData.type === option.value ? 'border-brand/60 bg-brand/5' : 'border-border hover:bg-surface-muted'}`}>
+                        <span className="flex items-center gap-2 font-semibold text-text">
+                          <input type="radio" name="type" value={option.value} checked={formData.type === option.value} onChange={handleChange} className="accent-brand" />
+                          {option.label}
+                        </span>
+                        <span className="text-sm text-text-muted">{option.hint}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {!isGroup && (
+                  <FormField id="package-category" label="Category" required>
+                    <select id="package-category" name="category" value={formData.category} onChange={handleChange} className={inputClass}>
+                      <option value="SILVER">Silver</option>
+                      <option value="GOLD">Gold</option>
+                      <option value="PLATINUM">Platinum</option>
+                      <option value="DIAMOND">Diamond Elite</option>
+                    </select>
+                  </FormField>
+                )}
+
+                <FormField id="package-code" label="Package code" hint={`Booking numbers use this code: ${previewCode}001, ${previewCode}002 and so on. Two to five capital letters.`}>
+                  <div className="relative">
+                    <LuHash aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+                    <input id="package-code" type="text" name="code" value={formData.code} onChange={handleChange} maxLength={5} placeholder={previewCode} className={`${inputClass} pl-9 font-mono uppercase`} />
+                  </div>
+                </FormField>
+              </div>
+            </Section>
+
+            <Section step="2" icon={LuBanknote} title="Price and duration" hint="Prices are in BDT per person.">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <FormField id="package-price" label="Base price (BDT)" required>
+                  <input id="package-price" type="number" name="basePrice" value={formData.basePrice} onChange={handleChange} required min="0" step="0.01" placeholder="24500" className={inputClass} />
+                </FormField>
+                <FormField id="package-days" label="Days" required>
+                  <input id="package-days" type="number" name="defaultDays" value={formData.defaultDays} onChange={handleChange} required min="1" placeholder="4" className={inputClass} />
+                </FormField>
+                <FormField id="package-nights" label="Nights" required>
+                  <input id="package-nights" type="number" name="defaultNights" value={formData.defaultNights} onChange={handleChange} required min="0" placeholder="3" className={inputClass} />
+                </FormField>
+              </div>
+            </Section>
+
+            <Section step="3" icon={LuSparkles} title="Description" hint="What the tour is, for customers reading the details.">
+              <FormField id="package-description" label="Description" required>
+                <textarea id="package-description" name="description" value={formData.description} onChange={handleChange} required rows={4} placeholder="Describe the tour in a few sentences." className={`${inputClass} resize-none`} />
+              </FormField>
+            </Section>
+
+            <Section step="4" icon={LuUsers} title="What's included" hint="Leave a line empty if it is not part of the price.">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField id="inc-transport" label="Transport">
+                  <input id="inc-transport" type="text" name="inclusionsTransport" value={formData.inclusionsTransport} onChange={handleChange} placeholder="AC vehicle, airport transfer" className={inputClass} />
+                </FormField>
+                <FormField id="inc-hotel" label="Accommodation">
+                  <input id="inc-hotel" type="text" name="inclusionsHotel" value={formData.inclusionsHotel} onChange={handleChange} placeholder="4-star hotel, twin sharing" className={inputClass} />
+                </FormField>
+                <FormField id="inc-meals" label="Meals">
+                  <input id="inc-meals" type="text" name="inclusionsMeals" value={formData.inclusionsMeals} onChange={handleChange} placeholder="Breakfast and dinner" className={inputClass} />
+                </FormField>
+                <div className="flex items-end">
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-4 py-3">
+                    <input type="checkbox" name="inclusionsGuide" checked={formData.inclusionsGuide} onChange={handleChange} className="h-5 w-5 accent-brand" />
+                    <span className="text-sm font-semibold text-text">Professional tour guide included</span>
+                  </label>
+                </div>
+              </div>
+            </Section>
+
+            <Section step="5" icon={LuRoute} title="Itinerary" hint="The places visited, in order.">
+              <DestinationsManager
+                destinations={formData.destinations}
+                onChange={(next) => setFormData(prev => ({ ...prev, destinations: next }))}
               />
-            </div>
-
-            {/* Price */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Base Price (USD) *
-              </label>
-              <div className="relative">
-                <FaDollarSign className="absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="number"
-                  name="basePrice"
-                  value={formData.basePrice}
-                  onChange={handleChange}
-                  required
-                  min="0"
-                  step="0.01"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="999.99"
-                />
-              </div>
-            </div>
-
-            {/* Type */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Package Type *
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-              >
-                <option value="PERSONAL">Personal Tour</option>
-                <option value="GROUP">Group Tour</option>
-              </select>
-            </div>
-
-            {/* Category - Only for PERSONAL type */}
-            {formData.type === 'PERSONAL' && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Category *
-                </label>
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                >
-                  <option value="SILVER">Silver</option>
-                  <option value="GOLD">Gold</option>
-                  <option value="PLATINUM">Platinum</option>
-                  <option value="DIAMOND">Diamond</option>
-                </select>
-              </div>
-            )}
-
-            {/* Default Days */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Default Days *
-              </label>
-              <div className="relative">
-                <FaClock className="absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="number"
-                  name="defaultDays"
-                  value={formData.defaultDays}
-                  onChange={handleChange}
-                  required
-                  min="1"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="7"
-                />
-              </div>
-            </div>
-
-            {/* Default Nights */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Default Nights *
-              </label>
-              <div className="relative">
-                <FaClock className="absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="number"
-                  name="defaultNights"
-                  value={formData.defaultNights}
-                  onChange={handleChange}
-                  required
-                  min="0"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="6"
-                />
-              </div>
-            </div>
+            </Section>
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Description *
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              required
-              rows="4"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-              placeholder="Describe the package..."
-            />
-          </div>
+          <div className="space-y-5 lg:col-span-2">
+            <Section step="6" icon={LuCalendarDays} title="Summary">
+              <dl className="space-y-3 text-sm">
+                <div className="flex justify-between gap-3"><dt className="text-text-muted">Type</dt><dd className="font-semibold text-text">{isGroup ? 'Group tour' : 'Personal tour'}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-text-muted">Duration</dt><dd className="font-semibold text-text">{days ? `${days} day${days === 1 ? '' : 's'}, ${nights} night${nights === 1 ? '' : 's'}` : 'Not set'}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-text-muted">Price</dt><dd className="font-display text-lg font-bold text-brand">{formData.basePrice ? `BDT ${Number(formData.basePrice).toLocaleString()}` : 'Not set'}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-text-muted">Booking numbers</dt><dd className="font-mono font-semibold text-text">#{previewCode}001</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-text-muted">Stops</dt><dd className="font-semibold text-text">{formData.destinations.length}</dd></div>
+              </dl>
+            </Section>
 
-          {/* Inclusions Section */}
-          <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Inclusions</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Transport */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Transport
-                </label>
-                <input
-                  type="text"
-                  name="inclusionsTransport"
-                  value={formData.inclusionsTransport}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., AC Vehicle, Airport Transfer"
-                />
-              </div>
-
-              {/* Hotel */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Hotel/Accommodation
-                </label>
-                <input
-                  type="text"
-                  name="inclusionsHotel"
-                  value={formData.inclusionsHotel}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., 4-Star Hotel, Twin Sharing"
-                />
-              </div>
-
-              {/* Meals */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Meals
-                </label>
-                <input
-                  type="text"
-                  name="inclusionsMeals"
-                  value={formData.inclusionsMeals}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., Breakfast & Dinner"
-                />
-              </div>
-
-              {/* Guide */}
-              <div className="flex items-center">
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="inclusionsGuide"
-                    checked={formData.inclusionsGuide}
-                    onChange={handleChange}
-                    className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                  />
-                  <span className="ml-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Professional Tour Guide Included
-                  </span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Destinations Section */}
-          <DestinationsManager 
-            destinations={formData.destinations}
-            onChange={(newDestinations) => setFormData(prev => ({ ...prev, destinations: newDestinations }))}
-          />
-
-          {/* Extras */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Extras (one per line)
-            </label>
-            <textarea
-              name="extras"
-              value={formData.extras}
-              onChange={handleChange}
-              rows="3"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-              placeholder="Photo Album&#10;Welcome Drink&#10;Souvenir T-shirt"
-            />
-          </div>
-
-          {/* Photos Section */}
-          <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <FaImage className="text-blue-500" />
-                Package Photos (Optional)
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, photos: [...prev.photos, ''] }))}
-                className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                <FaPlus size={12} />
-                <span>Add Photo URL</span>
-              </button>
-            </div>
-
-            {formData.photos.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                No photos added. Click "Add Photo URL" to add images.
-              </p>
-            ) : (
+            <Section step="7" icon={LuImage} title="Photos" hint="Image links. The first photo is the cover.">
               <div className="space-y-3">
+                {formData.photos.length === 0 && <p className="text-sm text-text-muted">No photos yet.</p>}
                 {formData.photos.map((photo, index) => (
                   <div key={index} className="flex items-center gap-2">
-                    <div className="flex-1">
+                    <div className="h-14 w-14 flex-none overflow-hidden rounded-lg bg-surface-muted">
+                      {photo && <img src={photo} alt={`Photo ${index + 1} preview`} className="h-full w-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />}
+                    </div>
+                    <FormField id={`photo-${index}`} label={`Photo ${index + 1}`} className="min-w-0 flex-1">
                       <input
+                        {...fieldAria(`photo-${index}`)}
                         type="url"
                         value={photo}
                         onChange={(e) => {
-                          const newPhotos = [...formData.photos];
-                          newPhotos[index] = e.target.value;
-                          setFormData(prev => ({ ...prev, photos: newPhotos }));
+                          const next = [...formData.photos];
+                          next[index] = e.target.value;
+                          setFormData(prev => ({ ...prev, photos: next }));
                         }}
                         placeholder="https://example.com/image.jpg"
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                        className={inputClass}
                       />
-                    </div>
-                    {photo && (
-                      <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
-                        <img
-                          src={photo}
-                          alt={`Preview ${index + 1}`}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                    )}
+                    </FormField>
                     <button
                       type="button"
-                      onClick={() => {
-                        const newPhotos = formData.photos.filter((_, i) => i !== index);
-                        setFormData(prev => ({ ...prev, photos: newPhotos }));
-                      }}
-                      className="flex-shrink-0 p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                      aria-label={`Remove photo ${index + 1}`}
+                      onClick={() => setFormData(prev => ({ ...prev, photos: prev.photos.filter((_, i) => i !== index) }))}
+                      className="mt-6 flex h-11 w-11 flex-none items-center justify-center rounded-lg text-danger transition-colors hover:bg-danger/10"
                     >
-                      <FaTrash size={14} />
+                      <LuTrash2 aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
                 ))}
+                <Button type="button" variant="secondary" icon={LuPlus} onClick={() => setFormData(prev => ({ ...prev, photos: [...prev.photos, ''] }))}>Add photo</Button>
               </div>
-            )}
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-              💡 Tip: Use high-quality images from URLs. Recommended size: 800x500px or similar aspect ratio.
-            </p>
-          </div>
+            </Section>
 
-          {/* Active Status */}
-          <div>
-            <label className="flex items-center p-4 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-              <input
-                type="checkbox"
-                name="isActive"
-                checked={formData.isActive}
-                onChange={handleChange}
-                className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-              />
-              <div className="ml-3">
-                <span className="font-semibold text-gray-900 dark:text-white">
-                  Active Package
-                </span>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Inactive packages won't be visible to customers
-                </p>
-              </div>
-            </label>
-          </div>
+            <Section step="8" icon={LuSparkles} title="Extras" hint="One extra per line.">
+              <FormField id="package-extras" label="Extras">
+                <textarea id="package-extras" name="extras" value={formData.extras} onChange={handleChange} rows={3} placeholder={'Photo album\nWelcome drink\nSouvenir T-shirt'} className={`${inputClass} resize-none`} />
+              </FormField>
+            </Section>
 
-          {/* International Package */}
-          <div>
-            <label className="flex items-center p-4 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-              <input
-                type="checkbox"
-                name="isInternational"
-                checked={formData.isInternational}
-                onChange={handleChange}
-                className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <div className="ml-3">
-                <span className="font-semibold text-gray-900 dark:text-white">
-                  International Package ✈️
-                </span>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Check if this is an international tour (requires KYC for booking)
-                </p>
+            <Section step="9" icon={LuGlobe} title="Visibility" hint="Control what customers see.">
+              <div className="space-y-3">
+                <ToggleCard name="isActive" checked={formData.isActive} onChange={handleChange} title="Active package" description="Inactive packages are hidden from customers." />
+                <ToggleCard name="isInternational" checked={formData.isInternational} onChange={handleChange} title="International tour" description="Customers must complete KYC before booking." />
               </div>
-            </label>
-          </div>
+            </Section>
 
-          {/* Map Location */}
-          <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaMapMarkerAlt className="mr-2 text-red-500" />
-              Map Location (Optional)
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-              Add coordinates to show this package location on the map. Customers can view it by clicking the map button.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Latitude
-                </label>
-                <input
-                  type="number"
-                  name="mapLat"
-                  value={formData.mapLat}
-                  onChange={handleChange}
-                  step="any"
-                  placeholder="e.g., 23.8103"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
+            <Section step="10" icon={LuMapPin} title="Map location" hint="Optional. Shown when a customer opens the map.">
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                <FormField id="map-lat" label="Latitude">
+                  <input id="map-lat" type="number" name="mapLat" value={formData.mapLat} onChange={handleChange} step="any" placeholder="23.8103" className={inputClass} />
+                </FormField>
+                <FormField id="map-lng" label="Longitude">
+                  <input id="map-lng" type="number" name="mapLng" value={formData.mapLng} onChange={handleChange} step="any" placeholder="90.4125" className={inputClass} />
+                </FormField>
+                <FormField id="map-zoom" label="Zoom (1–18)">
+                  <input id="map-zoom" type="number" name="mapZoom" value={formData.mapZoom} onChange={handleChange} min="1" max="18" placeholder="12" className={inputClass} />
+                </FormField>
               </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Longitude
-                </label>
-                <input
-                  type="number"
-                  name="mapLng"
-                  value={formData.mapLng}
-                  onChange={handleChange}
-                  step="any"
-                  placeholder="e.g., 90.4125"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Zoom Level
-                </label>
-                <input
-                  type="number"
-                  name="mapZoom"
-                  value={formData.mapZoom}
-                  onChange={handleChange}
-                  min="1"
-                  max="18"
-                  placeholder="12"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-              💡 Tip: You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google Maps</a>. Right-click on a location and copy the coordinates.
-            </p>
+            </Section>
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:shadow-lg transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Saving...' : (packageData ? 'Update Package' : 'Create Package')}
-            </button>
-          </div>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body
+        <div className="sticky bottom-0 -mx-4 flex flex-col-reverse gap-3 border-t border-border bg-surface/95 px-4 py-4 backdrop-blur sm:flex-row sm:justify-end sm:-mx-6 sm:px-6">
+          <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button type="submit" loading={loading}>{packageData ? 'Update package' : 'Create package'}</Button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

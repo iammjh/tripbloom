@@ -1,5 +1,8 @@
+import { LuGift } from 'react-icons/lu';
+import { CheckIcon } from './ui/icons.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState } from 'react';
-import { FaGift } from 'react-icons/fa';
+
 import axios from 'axios';
 
 const Newsletter = () => {
@@ -15,14 +18,14 @@ const Newsletter = () => {
       setTimeout(() => setSubscribed(false), 5000);
     } catch (error) {
       console.error('Error subscribing:', error);
-      alert('Successfully subscribed to newsletter!');
+      notify.message('Successfully subscribed to newsletter!');
     }
   };
 
   return (
     <section className="section-container bg-gradient-to-r from-primary to-green-700 text-white">
       <div className="max-w-3xl mx-auto text-center">
-        <FaGift className="text-6xl mx-auto mb-6" />
+        <LuGift aria-hidden="true" className="text-6xl mx-auto mb-6" />
         <h2 className="font-display text-4xl font-bold mb-4">
           Join TripBloom Club
         </h2>
@@ -32,7 +35,7 @@ const Newsletter = () => {
 
         {subscribed && (
           <div className="bg-white text-green-600 px-6 py-3 rounded-lg mb-6 inline-block font-semibold">
-            ✓ Successfully subscribed! Check your email.
+            <CheckIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> Successfully subscribed! Check your email.
           </div>
         )}
 

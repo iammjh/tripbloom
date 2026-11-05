@@ -1,71 +1,40 @@
 import React from 'react';
-import { FaSearch, FaPalette, FaLock, FaPlane } from 'react-icons/fa';
+import { LuSearch, LuPalette, LuLock, LuPlane } from 'react-icons/lu';
 
-const HowItWorks = () => {
-  const steps = [
-    {
-      icon: <FaSearch className="text-5xl text-primary" />,
-      title: 'Search & Explore',
-      description: 'Choose your dream destination or browse package types.'
-    },
-    {
-      icon: <FaPalette className="text-5xl text-secondary" />,
-      title: 'Customize Your Tour',
-      description: 'Select category: Silver, Gold, Platinum, or Diamond Elite.'
-    },
-    {
-      icon: <FaLock className="text-5xl text-accent" />,
-      title: 'Book Securely',
-      description: 'Pay safely online and get instant confirmation.'
-    },
-    {
-      icon: <FaPlane className="text-5xl text-primary" />,
-      title: 'Enjoy the Journey',
-      description: 'Travel with comfort, safety, and peace of mind.'
-    }
-  ];
+// Copy describes the real flow: payments are submitted and then verified by the TripBloom team, not confirmed instantly.
+const STEPS = [
+  { icon: LuSearch, title: 'Search & explore', text: 'Pick a destination or browse tour packages by type and budget.' },
+  { icon: LuPalette, title: 'Customise your tour', text: 'Choose personal options, dates and travellers, or join a fixed group departure.' },
+  { icon: LuLock, title: 'Book & submit payment', text: 'Send your payment reference. Our team checks the transfer and confirms your booking.' },
+  { icon: LuPlane, title: 'Enjoy the journey', text: 'Get your itinerary, travel with support on hand, and earn reward points.' },
+];
 
-  return (
-    <div className="w-full bg-transparent backdrop-blur-sm dark:bg-gray-900/60 relative">
-      <div className="absolute inset-0 pointer-events-none z-0 bg-gradient-to-r from-purple-50/18 via-transparent to-blue-50/12"></div>
-      <section className="section-container bg-transparent relative overflow-hidden py-12 lg:py-16 relative z-10">
-      {/* Background Decoration */}
-      <div className="absolute inset-0 opacity-5 dark:opacity-10">
-        <div className="absolute top-10 left-10 w-40 h-40 bg-primary rounded-full filter blur-3xl animate-pulse-slow"></div>
-        <div className="absolute bottom-10 right-10 w-60 h-60 bg-secondary rounded-full filter blur-3xl animate-pulse-slow" style={{animationDelay: '2s'}}></div>
-      </div>
-
-      <h2 className="section-title dark:text-white relative z-10 animate-fade-in-up">How It Works</h2>
-      <p className="section-subtitle dark:text-gray-300 relative z-10 animate-fade-in-up" style={{animationDelay: '0.1s'}}>
-        Plan your perfect trip in just 4 simple steps
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative z-10">
-        {steps.map((step, index) => (
-          <div
-            key={index}
-            className="bg-white dark:bg-gray-700 p-8 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-4 hover:scale-105 text-center group animate-fade-in-up"
-            style={{animationDelay: `${index * 0.15}s`}}
-          >
-            <div className="flex justify-center mb-4 transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-              {step.icon}
-            </div>
-            <div className="text-4xl font-bold text-gray-300 dark:text-gray-600 mb-2 group-hover:text-primary dark:group-hover:text-primary transition-colors duration-300">0{index + 1}</div>
-            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3 group-hover:text-primary dark:group-hover:text-primary transition-colors duration-300">{step.title}</h3>
-            <p className="text-gray-600 dark:text-gray-300">{step.description}</p>
-            
-            {/* Connecting Arrow (except for last item) */}
-            {index < steps.length - 1 && (
-              <div className="hidden lg:block absolute top-1/2 -right-4 transform -translate-y-1/2 text-gray-300 dark:text-gray-600 text-3xl animate-pulse">
-                →
+const HowItWorks = () => (
+  <section aria-labelledby="how-heading" className="mesh-bg py-16 lg:py-20">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <header className="mx-auto mb-12 max-w-2xl text-center">
+        <p className="text-sm font-semibold uppercase tracking-wider text-brand">How it works</p>
+        <h2 id="how-heading" className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">Your trip in four steps</h2>
+      </header>
+      <ol className="relative grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {STEPS.map((step, index) => {
+          const Icon = step.icon;
+          return (
+            <li key={step.title} className="relative flex flex-col rounded-2xl glass p-6">
+              <div className="mb-5 flex items-center justify-between">
+                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10 text-brand">
+                  <Icon aria-hidden="true" className="h-6 w-6" />
+                </span>
+                <span aria-hidden="true" className="font-display text-3xl font-bold text-border">0{index + 1}</span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
-      </section>
+              <h3 className="text-lg font-semibold text-text">{step.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-text-muted">{step.text}</p>
+            </li>
+          );
+        })}
+      </ol>
     </div>
-  );
-};
+  </section>
+);
 
 export default HowItWorks;

@@ -1,141 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { FaGlobeAmericas, FaUsers, FaStar, FaMapMarkedAlt } from 'react-icons/fa';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { PiGlobeHemisphereWestDuotone, PiMapTrifoldDuotone, PiStarDuotone, PiUsersThreeDuotone } from 'react-icons/pi';
+
+// Platform counts from the backend. A value is shown only when it was actually received; otherwise a dash.
+const ITEMS = [
+  { key: 'totalPackages', label: 'Tour packages', icon: PiMapTrifoldDuotone },
+  { key: 'happyTravelers', label: 'Happy travellers', icon: PiUsersThreeDuotone },
+  { key: 'fiveStarReviews', label: '5-star reviews', icon: PiStarDuotone },
+  { key: 'totalDestinations', label: 'Destinations', icon: PiGlobeHemisphereWestDuotone },
+];
 
 const Stats = () => {
-  const [stats, setStats] = useState({
-    totalPackages: 0,
-    happyTravelers: 0,
-    fiveStarReviews: 0,
-    totalDestinations: 0
-  });
-  const [animatedStats, setAnimatedStats] = useState({
-    totalPackages: 0,
-    happyTravelers: 0,
-    fiveStarReviews: 0,
-    totalDestinations: 0
-  });
+  const [stats, setStats] = useState(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    fetchStats();
+    let active = true;
+    axios.get('/api/stats/platform')
+      .then(response => {
+        if (!active) return;
+        if (response.data?.success && response.data.stats) setStats(response.data.stats);
+        else setFailed(true);
+      })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
   }, []);
 
-  const fetchStats = async () => {
-    try {
-      const response = await axios.get('/api/stats/platform');
-      if (response.data.success) {
-        const fetchedStats = response.data.stats;
-        setStats(fetchedStats);
-        // Animate counters
-        animateCounters(fetchedStats);
-      }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-      // Fallback stats
-      const fallbackStats = {
-        totalPackages: 4,
-        happyTravelers: 0,
-        fiveStarReviews: 0,
-        totalDestinations: 50
-      };
-      setStats(fallbackStats);
-      animateCounters(fallbackStats);
-    }
-  };
-
-  const animateCounters = (targetStats) => {
-    const duration = 2000; // 2 seconds
-    const steps = 60;
-    const stepDuration = duration / steps;
-
-    let currentStep = 0;
-
-    const interval = setInterval(() => {
-      currentStep++;
-      const progress = currentStep / steps;
-
-      setAnimatedStats({
-        totalPackages: Math.floor(targetStats.totalPackages * progress),
-        happyTravelers: Math.floor(targetStats.happyTravelers * progress),
-        fiveStarReviews: Math.floor(targetStats.fiveStarReviews * progress),
-        totalDestinations: Math.floor(targetStats.totalDestinations * progress)
-      });
-
-      if (currentStep >= steps) {
-        clearInterval(interval);
-        setAnimatedStats(targetStats);
-      }
-    }, stepDuration);
-  };
-
-  const statsData = [
-    {
-      icon: <FaGlobeAmericas className="text-5xl" />,
-      value: animatedStats.totalPackages,
-      label: 'Tour Packages',
-      suffix: '+',
-      color: 'from-blue-500 to-blue-600'
-    },
-    {
-      icon: <FaUsers className="text-5xl" />,
-      value: animatedStats.happyTravelers,
-      label: 'Happy Travelers',
-      suffix: '+',
-      color: 'from-green-500 to-green-600'
-    },
-    {
-      icon: <FaStar className="text-5xl" />,
-      value: animatedStats.fiveStarReviews,
-      label: '5-Star Reviews',
-      suffix: '+',
-      color: 'from-yellow-500 to-yellow-600'
-    },
-    {
-      icon: <FaMapMarkedAlt className="text-5xl" />,
-      value: animatedStats.totalDestinations,
-      label: 'Destinations',
-      suffix: '+',
-      color: 'from-purple-500 to-purple-600'
-    }
-  ];
+  const format = value => (typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—');
 
   return (
-    <section className="py-16 bg-gradient-to-r from-primary to-green-600 relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full filter blur-3xl animate-float"></div>
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full filter blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {statsData.map((stat, index) => (
-            <div
-              key={index}
-              className="text-center text-white transform hover:scale-110 transition-all duration-300 animate-fade-in-up"
-              style={{animationDelay: `${index * 0.1}s`}}
-            >
-              <div className="flex justify-center mb-4 transform hover:rotate-12 transition-transform duration-300">
-                {stat.icon}
-              </div>
-              <div className="text-5xl font-bold mb-2">
-                {stat.value.toLocaleString()}{stat.suffix}
-              </div>
-              <div className="text-lg font-semibold opacity-90">{stat.label}</div>
-              
-              {/* Decorative line */}
-              <div className="mt-4 h-1 w-20 bg-white/30 mx-auto rounded-full"></div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Wave separator */}
-      <div className="absolute bottom-0 left-0 right-0">
-        <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M0 0L60 10C120 20 240 40 360 46.7C480 53 600 47 720 43.3C840 40 960 40 1080 46.7C1200 53 1320 67 1380 73.3L1440 80V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0V0Z" fill="white" className="dark:fill-gray-900"/>
-        </svg>
-      </div>
+    <section aria-label="TripBloom in numbers" className="bg-brand-strong text-white">
+      <dl className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-4 py-10 sm:px-6 md:grid-cols-4 lg:px-8">
+        {ITEMS.map(({ key, label, icon: Icon }) => (
+          <div key={key} className="flex flex-col items-center gap-2 text-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400/30 via-teal-400/15 to-sky-400/25 ring-1 ring-inset ring-white/15 shadow-[0_0_32px_-6px_rgb(var(--brand)/0.7)] backdrop-blur">
+              <Icon aria-hidden="true" className="h-9 w-9 text-emerald-200 drop-shadow-[0_0_10px_rgb(var(--brand)/0.8)]" />
+            </span>
+            <dt className="order-2 text-sm font-medium text-white/80">{label}</dt>
+            <dd className="order-1 font-display text-3xl font-bold tabular-nums sm:text-4xl">
+              {failed ? '—' : format(stats?.[key])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {failed && <p className="pb-6 text-center text-xs text-white/80">Platform figures are unavailable right now.</p>}
     </section>
   );
 };

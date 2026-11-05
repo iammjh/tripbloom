@@ -1,3 +1,5 @@
+import { GroupDeparture } from '../model/groupDeparture.model.js';
+import { buildDashboard, receiptsByCurrency, reportBoundary, REPORT_TIMEZONE } from './analytics.service.js';
 // admin.service.js
 import { User } from '../model/user.model.js';
 import Booking from '../model/booking.model.js';
@@ -5,54 +7,27 @@ import { TourPackage } from '../model/tourPackage.model.js';
 import { Review } from '../model/review.model.js';
 import { ContactMessage as Contact } from '../model/contact.model.js';
 import { ActivityLog, SystemSettings, Announcement } from '../model/admin.model.js';
+import { logActivity, getActivityLogOptions } from './activityLog.service.js';
 
 // ==================== DASHBOARD ====================
 
 // Get admin dashboard overview
 export async function getAdminDashboard() {
   try {
-    const [
-      totalUsers,
-      activeUsers,
-      totalOperators,
-      totalBookings,
-      totalPackages,
-      totalRevenue,
-      pendingContacts,
-      recentBookings
-    ] = await Promise.all([
+    const [bookings, packages, departures, reviews, totalUsers, activeUsers, totalOperators, pendingContacts, recentBookings] = await Promise.all([
+      Booking.find().select('customerId packageId bookingType status createdAt finalAmount totalAmount payments currency numTravelers').lean(),
+      TourPackage.find().select('title').lean(),
+      GroupDeparture.find({ startDate: { $gte: new Date(), $lte: new Date(Date.now() + 7 * 86400000) } }).populate('packageId', 'title').lean(),
+      Review.find({ status: 'APPROVED' }).select('packageId rating status').lean(),
       User.countDocuments({ roles: { $in: ['customer', 'CUSTOMER'] } }),
       User.countDocuments({ roles: { $in: ['customer', 'CUSTOMER'] }, isActive: true }),
       User.countDocuments({ roles: { $in: ['tour_operator', 'TOUR_OPERATOR'] } }),
-      Booking.countDocuments(),
-      TourPackage.countDocuments(),
-      Booking.aggregate([
-        { $match: { paymentStatus: 'PAID' } },
-        { $group: { _id: null, total: { $sum: '$totalPrice' } } }
-      ]),
-      Contact.countDocuments({ status: 'PENDING' }),
-      Booking.find()
-        .populate('customerId', 'fullName email')
-        .populate('packageId', 'title')
-        .sort({ createdAt: -1 })
-        .limit(10)
+      Contact.countDocuments({ handled: false }),
+      Booking.find().populate('customerId', 'fullName email').populate('packageId', 'title').sort({ createdAt: -1 }).limit(10)
     ]);
-
-    return {
-      dashboard: {
-        totalUsers,
-        activeUsers,
-        totalOperators,
-        totalBookings,
-        totalPackages,
-        totalRevenue: totalRevenue[0]?.total || 0,
-        pendingContacts,
-        recentBookings
-      }
-    };
-  } catch (error) {
-    return { error: error.message };
-  }
+    const dashboard = buildDashboard({ bookings, packages, departures, reviews });
+    return { dashboard: { ...dashboard, totalUsers, activeUsers, totalOperators, totalBookings: bookings.length, totalPackages: packages.length, totalRevenue: dashboard.revenue.net, pendingContacts, recentBookings } };
+  } catch { return { error: 'Unable to load dashboard metrics.' }; }
 }
 
 // Get recent activity logs
@@ -79,42 +54,35 @@ export async function getActivityLogs({ limit = 50, adminId, action, startDate, 
   }
 }
 
-// Log admin activity
-export async function logActivity({ adminId, action, targetType, targetId, description, metadata, ipAddress }) {
-  try {
-    // Allow logging even when adminId is not provided (system / unauthenticated actions)
-    const logPayload = {
-      action,
-      targetType,
-      targetId,
-      description,
-      metadata: metadata || {},
-      ipAddress
-    };
-
-    if (adminId) logPayload.adminId = adminId;
-
-    const log = new ActivityLog(logPayload);
-
-    await log.save();
-    return { log };
-  } catch (error) {
-    console.error('Failed to log activity:', error);
-    return { error: error.message };
-  }
-}
+// Activity logging lives in activityLog.service.js; re-exported here for existing callers.
+export { logActivity, getActivityLogOptions };
 
 // ==================== USER MANAGEMENT ====================
 
 // Update user role (promote/demote)
+const MANAGED_ROLES = ['ADMIN', 'CUSTOMER', 'TOUR_OPERATOR'];
+const hasAdminRole = roles => (roles || []).some(role => String(role).toUpperCase() === 'ADMIN');
+const otherActiveAdminExists = userId => User.exists({ _id: { $ne: userId }, isActive: true, roles: { $in: ['ADMIN', 'admin'] } });
 export async function updateUserRole({ userId, newRoles, adminId, ipAddress }) {
   try {
+    if (!Array.isArray(newRoles) || newRoles.length === 0 || newRoles.some(role => !MANAGED_ROLES.includes(String(role).toUpperCase()))) {
+      return { error: 'Provide one or more valid roles: ADMIN, CUSTOMER or TOUR_OPERATOR.', status: 400 };
+    }
     const user = await User.findById(userId);
     if (!user) {
-      return { error: 'User not found' };
+      return { error: 'User not found', status: 404 };
     }
 
     const oldRoles = [...user.roles];
+    if (String(user._id) === String(adminId) && hasAdminRole(oldRoles) && !hasAdminRole(newRoles)) {
+      return { error: 'You cannot remove your own administrator role.', status: 400 };
+    }
+    if (hasAdminRole(oldRoles) && !hasAdminRole(newRoles) && user.isActive && !await otherActiveAdminExists(user._id)) {
+      return { error: 'At least one active administrator must remain.', status: 409 };
+    }
+    if (JSON.stringify([...oldRoles].sort()) === JSON.stringify([...newRoles].sort())) {
+      return { user };
+    }
     user.roles = newRoles;
     await user.save();
 
@@ -131,16 +99,22 @@ export async function updateUserRole({ userId, newRoles, adminId, ipAddress }) {
 
     return { user };
   } catch (error) {
-    return { error: error.message };
+    return { error: error.message, status: 500 };
   }
 }
 
 // Suspend/Unsuspend user account
 export async function toggleUserSuspension({ userId, suspend, adminId, reason, ipAddress }) {
   try {
+    if (suspend && String(userId) === String(adminId)) {
+      return { error: 'You cannot suspend your own account.', status: 400 };
+    }
     const user = await User.findById(userId);
     if (!user) {
-      return { error: 'User not found' };
+      return { error: 'User not found', status: 404 };
+    }
+    if (suspend && user.isActive && hasAdminRole(user.roles) && !await otherActiveAdminExists(user._id)) {
+      return { error: 'At least one active administrator must remain.', status: 409 };
     }
 
     user.isActive = !suspend;
@@ -161,41 +135,23 @@ export async function toggleUserSuspension({ userId, suspend, adminId, reason, i
 
     return { user, message: suspend ? 'User suspended' : 'User activated' };
   } catch (error) {
-    return { error: error.message };
+    return { error: error.message, status: 500 };
   }
 }
 
 // Get all operators with their package counts
 export async function getOperatorsWithStats() {
   try {
-    const operators = await User.find({
-      roles: { $in: ['tour_operator', 'TOUR_OPERATOR'] }
-    }).select('fullName email phone isActive createdAt');
-
-    const operatorsWithStats = await Promise.all(
-      operators.map(async (operator) => {
-        const packages = await TourPackage.find({ operatorId: operator._id }).select('_id');
-        const packageIds = packages.map(p => p._id);
-        const packageCount = packages.length;
-        const bookingCount = await Booking.countDocuments({ packageId: { $in: packageIds } });
-        const totalRevenue = await Booking.aggregate([
-          { $match: { packageId: { $in: packageIds }, paymentStatus: 'PAID' } },
-          { $group: { _id: null, total: { $sum: '$totalPrice' } } }
-        ]);
-        
-        return {
-          ...operator.toObject(),
-          packageCount,
-          bookingCount,
-          totalRevenue: totalRevenue[0]?.total || 0
-        };
-      })
-    );
-
-    return { operators: operatorsWithStats };
-  } catch (error) {
-    return { error: error.message };
-  }
+    const operators = await User.find({ roles: { $in: ['tour_operator', 'TOUR_OPERATOR'] } }).select('fullName email phone isActive createdAt');
+    const result = await Promise.all(operators.map(async operator => {
+      const packages = await TourPackage.find({ assignedOperators: operator._id }).select('_id');
+      const departures = await GroupDeparture.find({ 'operators.operatorId': operator._id }).select('_id packageId');
+      const bookings = await Booking.find({ $or: [{ assignedOperator: operator._id, groupDepartureId: null }, { groupDepartureId: { $in: departures.map(d => d._id) } }] }).select('payments currency createdAt finalAmount totalAmount');
+      const revenueByCurrency = receiptsByCurrency(bookings);
+      return { ...operator.toObject(), packageCount: new Set([...packages.map(p => String(p._id)), ...departures.map(d => String(d.packageId))]).size, bookingCount: bookings.length, totalRevenue: revenueByCurrency.BDT?.net || 0, currency: 'BDT', revenueByCurrency };
+    }));
+    return { operators: result };
+  } catch { return { error: 'Unable to load operator statistics.' }; }
 }
 
 // ==================== CONTENT MODERATION ====================
@@ -240,14 +196,14 @@ export async function moderateTourPackage({ packageId, approved, rejectionReason
 // Delete inappropriate review
 export async function deleteReview({ reviewId, reason, adminId, ipAddress }) {
   try {
-    const review = await Review.findById(reviewId).populate('userId', 'fullName').populate('packageId', 'title');
+    const review = await Review.findById(reviewId).populate('customerId', 'fullName').populate('packageId', 'title');
     if (!review) {
       return { error: 'Review not found' };
     }
 
     const reviewDetails = {
-      userId: review.userId?._id,
-      userName: review.userId?.fullName,
+      userId: review.customerId?._id,
+      userName: review.customerId?.fullName,
       packageId: review.packageId?._id,
       packageTitle: review.packageId?.title,
       rating: review.rating,
@@ -277,38 +233,17 @@ export async function deleteReview({ reviewId, reason, adminId, ipAddress }) {
 
 // Get platform metrics for specific date range
 export async function getPlatformMetrics({ startDate, endDate }) {
+  const from = startDate ? reportBoundary(startDate) : new Date(0);
+  const until = endDate ? reportBoundary(endDate, { endOfDay: true }) : new Date();
+  if (!Number.isFinite(+from) || !Number.isFinite(+until) || until < from) return { error: 'Provide valid dates in chronological order.', status: 400 };
   try {
-    const dateFilter = {};
-    if (startDate || endDate) {
-      dateFilter.createdAt = {};
-      if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
-      if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
-    }
-
-    const [newUsers, newBookings, revenue, newPackages, newReviews] = await Promise.all([
-      User.countDocuments(dateFilter),
-      Booking.countDocuments(dateFilter),
-      Booking.aggregate([
-        { $match: { ...dateFilter, paymentStatus: 'PAID' } },
-        { $group: { _id: null, total: { $sum: '$totalPrice' } } }
-      ]),
-      TourPackage.countDocuments(dateFilter),
-      Review.countDocuments(dateFilter)
+    const dateFilter = { createdAt: { $gte: from, $lte: until } };
+    const [newUsers, newBookings, bookings, newPackages, newReviews] = await Promise.all([
+      User.countDocuments(dateFilter), Booking.countDocuments(dateFilter), Booking.find().select('payments currency createdAt').lean(), TourPackage.countDocuments(dateFilter), Review.countDocuments(dateFilter)
     ]);
-
-    return {
-      metrics: {
-        newUsers,
-        newBookings,
-        newPackages,
-        newReviews,
-        revenue: revenue[0]?.total || 0,
-        period: { startDate, endDate }
-      }
-    };
-  } catch (error) {
-    return { error: error.message };
-  }
+    const revenueByCurrency = receiptsByCurrency(bookings, from, until);
+    return { metrics: { newUsers, newBookings, newPackages, newReviews, revenue: revenueByCurrency.BDT?.net || 0, currency: 'BDT', revenueByCurrency, period: { startDate: from.toISOString(), endDate: until.toISOString(), timezone: REPORT_TIMEZONE } } };
+  } catch { return { error: 'Unable to load platform metrics.' }; }
 }
 
 // ==================== SYSTEM SETTINGS ====================
@@ -457,7 +392,7 @@ export async function updateAnnouncement({ announcementId, updates, adminId, ipA
     // Log activity
     await logActivity({
       adminId,
-      action: 'ANNOUNCEMENT_CREATED',
+      action: 'ANNOUNCEMENT_UPDATED',
       targetType: 'Announcement',
       targetId: announcementId,
       description: `Updated announcement: ${announcement.title}`,
@@ -484,7 +419,7 @@ export async function deleteAnnouncement({ announcementId, adminId, ipAddress })
     // Log activity
     await logActivity({
       adminId,
-      action: 'ANNOUNCEMENT_CREATED',
+      action: 'ANNOUNCEMENT_DELETED',
       targetType: 'Announcement',
       targetId: announcementId,
       description: `Deleted announcement: ${announcement.title}`,

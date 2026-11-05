@@ -1,17 +1,33 @@
+import { LuCircleCheck, LuCircleX, LuMapPin, LuPencil, LuSearch, LuStar, LuTrash2 } from 'react-icons/lu';
+import { NoteIcon } from './ui/icons.js';
+import ReviewModal from './ReviewModal';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { FaStar, FaSearch, FaFilter, FaEdit, FaTrash, FaClock, FaCheckCircle, FaTimesCircle, FaMapMarkerAlt } from 'react-icons/fa';
+import CustomerPageFrame from './customer/CustomerPageFrame.jsx';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import FormField, { inputClass } from './ui/FormField.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+
 
 const MyReviews = () => {
+  const navigate = useNavigate();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'PENDING', 'APPROVED', 'REJECTED'
   const [customerId, setCustomerId] = useState('');
+  // The review being edited (pending or rejected). Saving it updates the list.
+  const [editingReview, setEditingReview] = useState(null);
 
   useEffect(() => {
     // Get customer ID from localStorage or use a test ID
-    const userId = localStorage.getItem('userId') || '6756a1b2c3d4e5f6g7h8i9j0';
+    const userId = localStorage.getItem('userId') || '';
     setCustomerId(userId);
   }, []);
 
@@ -44,7 +60,7 @@ const MyReviews = () => {
   };
 
   const handleDelete = async (reviewId) => {
-    if (!window.confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
+    if (!(await confirmAction({ message: 'Are you sure you want to delete this review? This action cannot be undone.', danger: true }))) {
       return;
     }
 
@@ -54,260 +70,187 @@ const MyReviews = () => {
       });
 
       if (response.data.success || response.data.message) {
-        alert('Review deleted successfully');
+        notify.message('Review deleted successfully');
         fetchReviews();
       }
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to delete review. You can only delete pending reviews.');
+      notify.message(error.response?.data?.message || 'Failed to delete review. You can only delete pending reviews.');
     }
   };
 
-  const renderStars = (rating) => {
-    return [...Array(5)].map((_, index) => (
-      <FaStar
-        key={index}
-        className={index < rating ? 'text-yellow-400' : 'text-gray-300'}
-      />
-    ));
-  };
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      PENDING: { icon: FaClock, color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', text: 'Pending Review' },
-      APPROVED: { icon: FaCheckCircle, color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', text: 'Approved' },
-      REJECTED: { icon: FaTimesCircle, color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400', text: 'Rejected' }
-    };
-
-    const config = statusConfig[status] || statusConfig.PENDING;
-    const Icon = config.icon;
-
-    return (
-      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${config.color}`}>
-        <Icon className="mr-1" />
-        {config.text}
-      </span>
-    );
-  };
-
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
   const filteredReviews = reviews.filter(review => {
-    const matchesSearch = review.packageId?.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          review.packageId?.destination?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          review.comment?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+    const term = searchTerm.toLowerCase();
+    return review.packageId?.title?.toLowerCase().includes(term) ||
+      review.packageId?.destination?.toLowerCase().includes(term) ||
+      review.comment?.toLowerCase().includes(term);
   });
 
+  const approvedCount = reviews.filter(r => r.status === 'APPROVED').length;
+  const pendingCount = reviews.filter(r => r.status === 'PENDING').length;
+  const averageRating = reviews.length > 0 ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
+  const stats = [
+    { label: 'Total reviews', value: reviews.length },
+    { label: 'Approved', value: approvedCount },
+    { label: 'Pending', value: pendingCount },
+    { label: 'Average rating', value: averageRating ?? '—' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center">
-            <FaStar className="mr-3 text-yellow-400" />
-            My Reviews
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            View and manage all your tour package reviews
-          </p>
-        </div>
+    <CustomerPageFrame
+      active="reviews"
+      eyebrow="Your reviews"
+      title="My reviews"
+      description="The reviews you have written for tour packages. Approved reviews are visible to other travellers."
+    >
+      {!customerId && (
+        <EmptyState title="Log in to see your reviews" description="Your reviews appear here after you sign in." />
+      )}
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4">
-            <div className="text-sm text-blue-600 dark:text-blue-400 font-semibold mb-1">Total Reviews</div>
-            <div className="text-3xl font-bold text-blue-900 dark:text-blue-300">{reviews.length}</div>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl p-4">
-            <div className="text-sm text-green-600 dark:text-green-400 font-semibold mb-1">Approved</div>
-            <div className="text-3xl font-bold text-green-900 dark:text-green-300">
-              {reviews.filter(r => r.status === 'APPROVED').length}
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-xl p-4">
-            <div className="text-sm text-yellow-600 dark:text-yellow-400 font-semibold mb-1">Pending</div>
-            <div className="text-3xl font-bold text-yellow-900 dark:text-yellow-300">
-              {reviews.filter(r => r.status === 'PENDING').length}
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-4">
-            <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold mb-1">Average Rating</div>
-            <div className="text-3xl font-bold text-purple-900 dark:text-purple-300">
-              {reviews.length > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) : '0.0'}
-            </div>
-          </div>
-        </div>
+      {customerId && (
+        <>
+          <section aria-label="Review summary" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {stats.map(({ label, value }) => (
+              <div key={label} className="glass rounded-2xl p-5">
+                <p className="text-sm text-text-muted">{label}</p>
+                <p className="mt-1 font-display text-3xl font-bold text-text">{value}</p>
+              </div>
+            ))}
+          </section>
 
-        {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <form onSubmit={(e) => e.preventDefault()} aria-label="Filter reviews" className="glass flex flex-col gap-3 rounded-2xl p-4 md:flex-row md:items-start">
+            <div className="relative flex-1">
+              <LuSearch aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-text-muted" />
               <input
-                type="text"
-                placeholder="Search reviews by package or comment..."
+                type="search"
+                aria-label="Search reviews"
+                placeholder="Search reviews by package or comment"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className={`${inputClass} pl-10`}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <FaFilter className="text-gray-400" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="all">All Status</option>
+            <FormField id="review-status" label="Status" className="md:w-56">
+              <select id="review-status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={inputClass}>
+                <option value="all">All status</option>
                 <option value="PENDING">Pending</option>
                 <option value="APPROVED">Approved</option>
                 <option value="REJECTED">Rejected</option>
               </select>
+            </FormField>
+          </form>
+
+          {loading && (
+            <div className="space-y-4" aria-hidden="true">
+              {[0, 1].map((i) => <Skeleton key={i} className="h-44 w-full rounded-2xl" />)}
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Reviews List */}
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading reviews...</p>
-          </div>
-        ) : filteredReviews.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center">
-            <FaStar className="mx-auto text-6xl text-gray-300 dark:text-gray-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Reviews Found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              {searchTerm || statusFilter !== 'all' 
-                ? 'Try adjusting your filters'
-                : 'Start reviewing your completed trips to help other travelers!'}
-            </p>
-            {!searchTerm && statusFilter === 'all' && (
-              <button className="px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors">
-                Browse Tours
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredReviews.map((review) => (
-              <div
-                key={review._id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-xl transition-all border border-gray-200 dark:border-gray-700"
-              >
-                <div className="p-6">
-                  {/* Header */}
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                        {review.packageId?.title || 'Package'}
-                      </h3>
-                      <div className="flex items-center text-gray-600 dark:text-gray-400 text-sm">
-                        <FaMapMarkerAlt className="mr-2" />
+          {!loading && filteredReviews.length === 0 && (
+            <EmptyState
+              icon={LuStar}
+              title="No reviews found"
+              description={searchTerm || statusFilter !== 'all'
+                ? 'Try a different search or status.'
+                : 'Review a completed trip to help other travellers. Reviews appear here once you write them.'}
+              action={!searchTerm && statusFilter === 'all' ? <Button variant="secondary" onClick={() => navigate('/customer/history')}>Go to history</Button> : null}
+            />
+          )}
+
+          {!loading && filteredReviews.length > 0 && (
+            <div className="space-y-4">
+              {filteredReviews.map((review) => (
+                <article key={review._id} className="glass rounded-2xl p-6">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="font-display text-xl font-semibold text-text">{review.packageId?.title || 'Package'}</h3>
+                      <p className="mt-1 flex items-center gap-2 text-sm text-text-muted">
+                        <LuMapPin aria-hidden="true" className="h-4 w-4 flex-none" />
                         {review.packageId?.destination || 'Unknown destination'}
-                      </div>
+                      </p>
                     </div>
-                    <div className="flex flex-col items-start md:items-end gap-2">
-                      {getStatusBadge(review.status)}
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {formatDate(review.createdAt)}
-                      </span>
+                    <div className="flex flex-col items-start gap-2 md:items-end">
+                      <Badge value={review.status || 'PENDING'} />
+                      {review.createdAt && <span className="text-xs text-text-muted">{formatDate(review.createdAt)}</span>}
                     </div>
                   </div>
 
-                  {/* Rating */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="flex">
-                      {renderStars(review.rating)}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <div className="flex" aria-label={`Rated ${review.rating || 0} out of 5`}>
+                      {[0, 1, 2, 3, 4].map((index) => (
+                        <LuStar key={index} aria-hidden="true" className={`h-4 w-4 ${index < (review.rating || 0) ? 'fill-current text-warning' : 'text-border'}`} />
+                      ))}
                     </div>
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">
-                      {review.rating}.0
-                    </span>
-                    {review.verified && (
-                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 text-xs rounded-full font-semibold">
-                        Verified Purchase
-                      </span>
-                    )}
+                    <span className="text-sm font-semibold text-text">{review.rating || 0} / 5</span>
+                    {review.verified && <Badge tone="brand">Verified purchase</Badge>}
                   </div>
 
-                  {/* Comment */}
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
-                    <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {review.comment}
-                    </p>
-                  </div>
+                  {review.comment && (
+                    <p className="mt-4 rounded-xl bg-surface-muted p-4 leading-relaxed text-text">{review.comment}</p>
+                  )}
 
-                  {/* Moderator Note (if rejected) */}
                   {review.status === 'REJECTED' && review.moderatorNote && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
-                      <div className="flex items-start">
-                        <FaTimesCircle className="text-red-600 dark:text-red-400 mt-1 mr-3" />
-                        <div>
-                          <div className="font-semibold text-red-900 dark:text-red-300 mb-1">
-                            Rejection Reason
-                          </div>
-                          <div className="text-sm text-red-700 dark:text-red-400">
-                            {review.moderatorNote}
-                          </div>
-                        </div>
+                    <div className="mt-4 flex items-start gap-3 rounded-xl border border-danger/40 bg-danger/10 p-4">
+                      <LuCircleX aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-danger" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-text">Rejection reason</p>
+                        <p className="mt-1 text-text-muted">{review.moderatorNote}</p>
                       </div>
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
                     {review.status === 'PENDING' && (
                       <>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
-                          <FaEdit />
-                          Edit Review
-                        </button>
-                        <button
-                          onClick={() => handleDelete(review._id)}
-                          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
-                        >
-                          <FaTrash />
-                          Delete
-                        </button>
+                        <Button variant="secondary" size="sm" icon={LuPencil} onClick={() => setEditingReview(review)}>Edit review</Button>
+                        <Button variant="danger" size="sm" icon={LuTrash2} onClick={() => handleDelete(review._id)}>Delete</Button>
                       </>
                     )}
-                    {review.status === 'APPROVED' && (
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 text-sm">
-                        <FaCheckCircle className="text-green-500" />
-                        This review is visible to other travelers
-                      </div>
+                    {review.status === 'REJECTED' && (
+                      <Button size="sm" icon={LuPencil} onClick={() => setEditingReview(review)}>Edit and resubmit</Button>
                     )}
-                    {review.status === 'REJECTED' && review.status === 'PENDING' && (
-                      <button className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-colors">
-                        Resubmit Review
-                      </button>
+                    {review.status === 'APPROVED' && (
+                      <p className="flex items-center gap-2 text-sm text-text-muted">
+                        <LuCircleCheck aria-hidden="true" className="h-4 w-4 text-success" />
+                        This review is visible to other travellers.
+                      </p>
                     )}
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                </article>
+              ))}
+            </div>
+          )}
 
-        {/* Help Section */}
-        <div className="mt-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <h3 className="font-bold text-blue-900 dark:text-blue-300 mb-2">📝 Review Guidelines</h3>
-          <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
-            <li>• You can only review tours you've completed</li>
-            <li>• Reviews need admin approval before being published</li>
-            <li>• You can edit or delete pending reviews</li>
-            <li>• Once approved, reviews cannot be edited or deleted</li>
-            <li>• Be honest and constructive in your feedback</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+          <section aria-labelledby="guidelines-heading" className="glass rounded-2xl p-6">
+            <h3 id="guidelines-heading" className="flex items-center gap-2 font-display text-lg font-semibold text-text">
+              <NoteIcon aria-hidden="true" className="h-4 w-4 text-brand" />
+              Review guidelines
+            </h3>
+            <ul className="mt-3 space-y-2 text-sm text-text-muted">
+              <li>You can only review tours you have completed.</li>
+              <li>Reviews need admin approval before they are published.</li>
+              <li>You can write one review per tour. A rejected review is edited and resubmitted, not replaced.</li>
+              <li>You can edit or delete a pending review.</li>
+              <li>After a rejection, edit the review to address the reason and resubmit it for moderation.</li>
+              <li>Once approved, reviews cannot be edited or deleted.</li>
+              <li>Be honest and constructive in your feedback.</li>
+            </ul>
+          </section>
+        </>
+      )}
+
+      {/* Mounted only while a review is open, so its fields start from that review's values. */}
+      {editingReview && (
+        <ReviewModal
+          key={editingReview._id}
+          isOpen
+          review={editingReview}
+          onClose={() => setEditingReview(null)}
+          onSubmitted={() => { setEditingReview(null); fetchReviews(); }}
+        />
+      )}
+    </CustomerPageFrame>
   );
 };
 

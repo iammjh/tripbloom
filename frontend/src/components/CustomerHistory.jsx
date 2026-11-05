@@ -1,9 +1,20 @@
+import { LuCalendar, LuMessagesSquare, LuStar } from 'react-icons/lu';
+import { CheckIcon, LuggageIcon } from './ui/icons.js';
+import { userMessage } from '../utils/errorMessage.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import BookingDetailModal from './BookingDetailModal';
 import OperatorChatModal from './OperatorChatModal';
 import ReviewModal from './ReviewModal';
-import { FaCalendarAlt, FaCheckCircle, FaTimesCircle, FaStar, FaComments } from 'react-icons/fa';
+import CustomerPageFrame from './customer/CustomerPageFrame.jsx';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+
 
 const CustomerHistory = () => {
   const [history, setHistory] = useState([]);
@@ -103,8 +114,8 @@ const CustomerHistory = () => {
     if (!booking) return;
     const pkgId = booking.packageId?._id || booking.packageId || (booking.package?._id || booking.package);
     const userId = (user && user.id) || localStorage.getItem('userId');
-    if (!userId) return alert('Please login to submit a review.');
-    if (!pkgId) return alert('Package information missing for this booking.');
+    if (!userId) return notify.message('Please login to submit a review.');
+    if (!pkgId) return notify.message('Package information missing for this booking.');
 
     try {
       const res = await fetch('/api/reviews', {
@@ -122,182 +133,122 @@ const CustomerHistory = () => {
         });
         setReviewModalOpen(false);
         setReviewTargetBooking(null);
-        alert('Thanks — your review was submitted and is pending moderation.');
+        notify.message('Thanks — your review was submitted and is pending moderation.');
       } else {
-        alert('Failed to submit review: ' + (data.message || JSON.stringify(data)));
+        notify.error(userMessage(data, 'We could not submit your review. Please try again.'));
       }
     } catch (err) {
       console.error('Review submit error', err);
-      alert('Failed to submit review');
+      notify.message('Failed to submit review');
     }
   };
+  const navigate = useNavigate();
+
+  const paidTotal = (booking) => (booking.payments || [])
+    .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Travel History</h1>
-          <p className="text-gray-600 dark:text-gray-400">Your past adventures and experiences</p>
+    <CustomerPageFrame
+      active="history"
+      eyebrow="Your travels"
+      title="Travel history"
+      description="Your past and cancelled trips."
+    >
+      {loading && (
+        <div className="space-y-4" aria-hidden="true">
+          {[0, 1].map((i) => <Skeleton key={i} className="h-48 w-full rounded-2xl" />)}
         </div>
+      )}
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <p className="text-gray-600">Loading your travel history...</p>
-          </div>
-        ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-600">{error}</p>
-          </div>
-        ) : history.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center">
-            <div className="text-6xl mb-4">🧳</div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Travel History Yet</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">Start your journey and create unforgettable memories!</p>
-            <button 
-              onClick={() => window.location.href = '/packages'}
-              className="px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
-            >
-              Browse Packages
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {history.map((booking) => {
-              const packageInfo = booking.packageId || {};
-              const isPaid = (booking.payments || [])
-                .filter(p => p.status === 'COMPLETED' || p.status === 'CONFIRMED' || p.status === 'SUCCESS')
-                .reduce((sum, p) => sum + (p.amount || 0), 0) >= (booking.totalAmount || 0);
-              
-              return (
-                <div
-                  key={booking._id || booking.id}
-                  className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all"
-                >
-                  <div className="flex flex-col md:flex-row">
-                    {/* Image */}
-                    <div className="md:w-64 h-48 md:h-auto">
-                      <img
-                        src={packageInfo.photos?.[0] || `https://source.unsplash.com/featured/?${encodeURIComponent(packageInfo.title || 'travel')}`}
-                        alt={packageInfo.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = `https://source.unsplash.com/featured/?travel`;
-                        }}
-                      />
+      {!loading && error && (
+        <ErrorState
+          title="Your history could not be loaded"
+          message={error === 'Please log in to view your history.' ? error : 'Please refresh the page. If it keeps happening, contact support.'}
+        />
+      )}
+
+      {!loading && !error && history.length === 0 && (
+        <EmptyState
+          icon={LuggageIcon}
+          title="No travel history yet"
+          description="Completed and cancelled trips appear here."
+          action={<Button onClick={() => navigate('/browse-packages')}>Browse tours</Button>}
+        />
+      )}
+
+      {!loading && !error && history.length > 0 && (
+        <div className="space-y-4">
+          {history.map((booking) => {
+            const packageInfo = booking.packageId || {};
+            const paid = paidTotal(booking);
+            const isPaid = paid >= (booking.totalAmount || 0);
+            const currency = booking.currency || 'BDT';
+            const pkgId = booking.packageId?._id || booking.packageId || (booking.package?._id || booking.package);
+            const alreadyReviewed = Boolean(pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString()));
+
+            return (
+              <article key={booking._id || booking.id} className="glass flex flex-col overflow-hidden rounded-2xl md:flex-row">
+                <div className="relative h-48 flex-none overflow-hidden bg-surface-muted md:h-auto md:w-64">
+                  <HistoryPhoto src={packageInfo.photos?.[0]} alt={packageInfo.title || 'Tour'} />
+                </div>
+
+                <div className="flex flex-1 flex-col gap-4 p-5 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="font-display text-xl font-semibold text-text">{packageInfo.title || 'Package'}</h3>
+                      <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-muted">
+                        <span className="inline-flex items-center gap-2">
+                          <LuCalendar aria-hidden="true" className="h-4 w-4" />
+                          {formatDate(booking.startDate)} – {formatDate(booking.endDate)}
+                        </span>
+                        <span>{booking.numTravelers || 1} traveller{booking.numTravelers > 1 ? 's' : ''}</span>
+                      </p>
                     </div>
-
-                    {/* Content */}
-                    <div className="flex-1 p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-                            {packageInfo.title || 'Package'}
-                          </h3>
-                          <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 space-x-4">
-                            <span className="flex items-center">
-                              <FaCalendarAlt className="mr-2" />
-                              {formatDate(booking.startDate)} - {formatDate(booking.endDate)}
-                            </span>
-                            <span>{booking.numTravelers || 1} traveler{booking.numTravelers > 1 ? 's' : ''}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                            booking.status === 'COMPLETED' 
-                              ? 'bg-green-100 text-green-800' 
-                              : booking.status === 'CANCELLED'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {booking.status === 'COMPLETED' && <FaCheckCircle className="mr-1" />}
-                            {booking.status === 'CANCELLED' && <FaTimesCircle className="mr-1" />}
-                            {booking.status}
-                          </div>
-                          <div className="mt-2 text-sm text-gray-600">
-                            {isPaid ? '✓ Paid' : 'Partially paid'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Total Amount</p>
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {booking.currency || 'BDT'} {booking.totalAmount || 0}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Amount Paid</p>
-                          <p className="font-semibold text-green-600">
-                            {booking.currency || 'BDT'} {(booking.payments || [])
-                              .filter(p => p.status === 'COMPLETED' || p.status === 'CONFIRMED' || p.status === 'SUCCESS')
-                              .reduce((sum, p) => sum + (p.amount || 0), 0)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Booking Date</p>
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {formatDate(booking.createdAt)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Booking Type</p>
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {booking.bookingType || 'N/A'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          onClick={() => setSelected(booking)}
-                          className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          View Details
-                        </button>
-                        {isPaid && booking.assignedOperator && (
-                          <button
-                            onClick={() => setChatBooking(booking)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-                          >
-                            <FaComments className="mr-2" />
-                            Chat with Operator
-                          </button>
-                        )}
-                        {booking.status === 'COMPLETED' && (() => {
-                          const pkgId = booking.packageId?._id || booking.packageId || (booking.package?._id || booking.package);
-                          const already = pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString());
-                          if (already) {
-                            return (
-                              <button
-                                onClick={() => window.location.href = '/customer/reviews'}
-                                className="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors flex items-center"
-                              >
-                                <FaStar className="mr-2" />
-                                View Review
-                              </button>
-                            );
-                          }
-
-                          return (
-                            <button
-                              onClick={() => { setReviewTargetBooking(booking); setReviewModalOpen(true); }}
-                              className="px-4 py-2 border-2 border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition-colors flex items-center"
-                            >
-                              <FaStar className="mr-2" />
-                              Write Review
-                            </button>
-                          );
-                        })()}
-                      </div>
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                      <Badge value={booking.status || 'PENDING'} />
+                      <span className={`text-sm ${isPaid ? 'inline-flex items-center gap-1 font-semibold text-success' : 'text-text-muted'}`}>
+                        {isPaid ? <><CheckIcon aria-hidden="true" className="h-3.5 w-3.5" /> Paid</> : 'Partially paid'}
+                      </span>
                     </div>
                   </div>
+
+                  <dl className="grid grid-cols-2 gap-4 rounded-xl bg-surface-muted p-4 text-sm md:grid-cols-4">
+                    <div>
+                      <dt className="text-text-muted">Total amount</dt>
+                      <dd className="mt-1 font-semibold text-text">{currency} {Number(booking.totalAmount || 0).toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Amount paid</dt>
+                      <dd className="mt-1 font-semibold text-success">{currency} {paid.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Booked on</dt>
+                      <dd className="mt-1 font-semibold text-text">{formatDate(booking.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Booking type</dt>
+                      <dd className="mt-1 font-semibold text-text">{booking.bookingType || 'N/A'}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => setSelected(booking)}>View Details</Button>
+                    {isPaid && booking.assignedOperator && (
+                      <Button size="sm" variant="secondary" icon={LuMessagesSquare} onClick={() => setChatBooking(booking)}>Chat with operator</Button>
+                    )}
+                    {booking.status === 'COMPLETED' && (alreadyReviewed ? (
+                      <Button size="sm" variant="secondary" icon={LuStar} onClick={() => navigate('/customer/reviews')}>View review</Button>
+                    ) : (
+                      <Button size="sm" variant="secondary" icon={LuStar} onClick={() => { setReviewTargetBooking(booking); setReviewModalOpen(true); }}>Write review</Button>
+                    ))}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              </article>
+            );
+          })}
+        </div>
+      )}
 
         {selected && (
           <BookingDetailModal
@@ -333,9 +284,17 @@ const CustomerHistory = () => {
             }}
           />
         )}
-      </div>
-    </div>
+    </CustomerPageFrame>
   );
 };
 
 export default CustomerHistory;
+
+// Photo for a history card. Shows a branded field when there is no photo or the photo fails to load.
+function HistoryPhoto({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-brand-strong via-surface to-info/40" />;
+  }
+  return <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-cover" />;
+}

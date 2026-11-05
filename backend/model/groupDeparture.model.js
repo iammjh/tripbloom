@@ -22,10 +22,11 @@ const groupDepartureSchema = new mongoose.Schema({
     seatNumber: { type: String, required: true },
     status: { type: String, enum: ['AVAILABLE', 'BOOKED', 'BLOCKED'], default: 'AVAILABLE' },
     bookedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }
+    bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
+    checkedIn: { type: Boolean, default: false }
   }],
   // Track checked-in state per seat (optional)
-  // Each seatMap entry may include a `checkedIn` boolean in practice; a flag here allows quick checks
+  // The aggregate flag records whether attendance has been reviewed.
   seatMapChecked: { type: Boolean, default: false },
   // Optional safety checklist stored for the departure
   safetyChecklist: {
@@ -56,7 +57,7 @@ const groupDepartureSchema = new mongoose.Schema({
   // Indicator that the tour has been marked started by operator
   tourStarted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
-});
+}, { optimisticConcurrency: true });
 
 export const GroupDeparture = mongoose.model('GroupDeparture', groupDepartureSchema);
 export const DEPARTURE_STATUS_ENUM = DEPARTURE_STATUS;

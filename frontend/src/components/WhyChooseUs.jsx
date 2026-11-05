@@ -1,82 +1,41 @@
 import React from 'react';
-import { FaBrain, FaShieldAlt, FaCreditCard, FaTrophy, FaCalendarCheck, FaLeaf } from 'react-icons/fa';
+import { LuCalendarCheck, LuCreditCard, LuReceipt, LuShieldCheck, LuTrophy, LuUndo2 } from 'react-icons/lu';
 
-const WhyChooseUs = () => {
-  const features = [
-    {
-      icon: <FaBrain className="text-5xl" />,
-      title: 'AI-Powered Recommendations',
-      description: 'Smart suggestions based on your preferences and travel history',
-      color: 'text-purple-600'
-    },
-    {
-      icon: <FaShieldAlt className="text-5xl" />,
-      title: 'Safe Travel & Verified Partners',
-      description: 'All operators are background-checked and certified',
-      color: 'text-blue-600'
-    },
-    {
-      icon: <FaCreditCard className="text-5xl" />,
-      title: 'Secure Payments & Easy Refunds',
-      description: 'PCI-compliant payment gateway with flexible cancellation',
-      color: 'text-green-600'
-    },
-    {
-      icon: <FaTrophy className="text-5xl" />,
-      title: 'Reward Points & Discounts',
-      description: 'Earn points on every booking and unlock exclusive deals',
-      color: 'text-amber-600'
-    },
-    {
-      icon: <FaCalendarCheck className="text-5xl" />,
-      title: 'Flexible Duration Packages',
-      description: 'From day trips to month-long adventures',
-      color: 'text-indigo-600'
-    },
-    {
-      icon: <FaLeaf className="text-5xl" />,
-      title: 'Eco-Friendly Travel Options',
-      description: 'Support sustainable tourism with green-certified tours',
-      color: 'text-teal-600'
-    }
-  ];
+// Each point describes a feature the product actually has. Removed claims: AI recommendations, a payment gateway,
+// green certification and instant confirmation (payments are verified by the team).
+const REASONS = [
+  { icon: LuCalendarCheck, title: 'Tailored or fixed trips', text: 'Build a personal tour around your dates and pace, or join a group departure with a set schedule.' },
+  { icon: LuShieldCheck, title: 'Identity-checked users', text: 'Travellers and operators submit identity documents that our team reviews before they take part.' },
+  { icon: LuCreditCard, title: 'Clear payments', text: 'Pay by bKash, Nagad, Rocket, bank transfer, card or cash, then submit the receipt reference for verification.' },
+  { icon: LuReceipt, title: 'Recorded receipts', text: 'Every verified payment and refund is recorded against your booking, so your balance is always visible.' },
+  { icon: LuUndo2, title: 'Published cancellation policy', text: 'The earlier you cancel, the more you get back. The refund schedule is shown before you confirm.' },
+  { icon: LuTrophy, title: 'Reward points', text: 'Earn points on your bookings and use them to reduce the cost of a future trip.' },
+];
 
-  return (
-    <div className="w-full bg-transparent backdrop-blur-sm dark:bg-gray-900/60 relative">
-      <div className="absolute inset-0 pointer-events-none z-0 bg-gradient-to-r from-rose-50/14 via-pink-50/6 to-fuchsia-50/12"></div>
-      <section id="about" className="section-container bg-transparent relative overflow-hidden py-12 lg:py-16 relative z-10">
-      {/* Animated Background Shapes */}
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-20 left-20 w-72 h-72 bg-purple-400 rounded-full filter blur-3xl animate-float"></div>
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-blue-400 rounded-full filter blur-3xl animate-float" style={{animationDelay: '3s'}}></div>
-      </div>
-
-      <h2 className="section-title dark:text-white relative z-10 animate-fade-in-up">Why Choose TripBloom?</h2>
-      <p className="section-subtitle dark:text-gray-300 relative z-10 animate-fade-in-up" style={{animationDelay: '0.1s'}}>
-        We bring together convenience, adventure, and reliability under one platform
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 relative z-10">
-        {features.map((feature, index) => (
-          <div
-            key={index}
-            className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-700 p-8 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-4 hover:scale-105 text-center group animate-fade-in-up border border-transparent hover:border-primary/30"
-            style={{animationDelay: `${index * 0.1}s`}}
-          >
-            <div className={`${feature.color} flex justify-center mb-4 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-500`}>
-              {feature.icon}
+const WhyChooseUs = () => (
+  <section id="about" aria-labelledby="why-heading" className="mesh-bg py-16 lg:py-20">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <header className="mx-auto mb-12 max-w-2xl text-center">
+        <p className="text-sm font-semibold uppercase tracking-wider text-brand">Why TripBloom</p>
+        <h2 id="why-heading" className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">Planned properly, paid transparently</h2>
+        <p className="mt-3 text-base text-text-muted">The details that matter before, during and after your trip.</p>
+      </header>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        {REASONS.map(reason => {
+          const Icon = reason.icon;
+          return (
+            <div key={reason.title} className="flex flex-col rounded-2xl glass p-6 transition-colors hover:border-brand/40">
+              <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                <Icon aria-hidden="true" className="h-5 w-5" />
+              </span>
+              <h3 className="text-base font-semibold text-text">{reason.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-text-muted">{reason.text}</p>
             </div>
-            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3 group-hover:text-primary dark:group-hover:text-primary transition-colors duration-300">{feature.title}</h3>
-            <p className="text-gray-600 dark:text-gray-300">{feature.description}</p>
-            
-            {/* Hover Accent Line */}
-            <div className="mt-4 h-1 w-0 group-hover:w-full bg-gradient-to-r from-primary to-secondary transition-all duration-500 mx-auto rounded-full"></div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      </section>
     </div>
-  );
-};
+  </section>
+);
 
 export default WhyChooseUs;

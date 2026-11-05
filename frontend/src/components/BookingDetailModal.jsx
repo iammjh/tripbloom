@@ -1,7 +1,13 @@
+import { LuBanknote, LuCalendar, LuTriangleAlert } from 'react-icons/lu';
+import { CheckIcon } from './ui/icons.js';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
+import { bookingLabel } from '../utils/bookingCode.js';
+import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useState, useEffect } from 'react';
 import PaymentForm from './PaymentForm';
 import Invoice from './Invoice';
-import { FaExclamationTriangle, FaCalendarAlt, FaMoneyBillWave } from 'react-icons/fa';
+
 
 const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
   const [showPayment, setShowPayment] = useState(false);
@@ -24,7 +30,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
       setShowPayment(false);
     } else {
       // If backend returned an error, surface it via alert for now
-      alert(res?.message || 'Payment failed');
+      notify.message(res?.message || 'Payment failed');
     }
   };
 
@@ -34,7 +40,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
       const now = new Date();
       const startDate = new Date(booking.startDate);
       const totalPaid = (booking.payments || [])
-        .filter(p => p.status === 'SUCCESS' || p.status === 'Success')
+        .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
         .reduce((sum, p) => sum + (p.amount || 0), 0);
 
       if (now >= startDate) return 0;
@@ -74,14 +80,14 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
       ? `Are you sure you want to cancel this tour?\n\nRefund Policy: ${refundInfo.policy}\n\nYou paid: ${booking.currency || 'BDT'} ${refundInfo.totalPaid}\nYou will receive: ${booking.currency || 'BDT'} ${refundInfo.amount} (${refundInfo.percentage}%)\n\nThis action cannot be undone.`
       : 'Are you sure you want to cancel this tour? This action cannot be undone.';
     
-    const confirmCancel = window.confirm(confirmMessage);
+    const confirmCancel = await confirmAction({ message: confirmMessage });
     if (!confirmCancel) return;
 
     const reason = prompt('Please provide a reason for cancellation (optional):') || 'Customer requested cancellation';
     const userId = localStorage.getItem('userId');
     
     if (!userId) {
-      alert('User not logged in');
+      notify.message('User not logged in');
       return;
     }
 
@@ -97,19 +103,19 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
       
       if (data.success) {
         const successMessage = refundInfo.amount > 0 
-          ? `Booking cancelled successfully!\n\nRefund amount: ${booking.currency || 'BDT'} ${refundInfo.amount}\nRefund will be processed within 7-10 business days.`
+          ? `Booking cancelled successfully!\n\nRefund amount: ${booking.currency || 'BDT'} ${refundInfo.amount}\nAn administrator will arrange and record the manual refund.`
           : 'Booking cancelled successfully!';
-        alert(successMessage);
+        notify.message(successMessage);
         if (data.booking) {
           onUpdate(data.booking);
         }
         onClose();
       } else {
-        alert(data.message || 'Failed to cancel booking');
+        notify.message(data.message || 'Failed to cancel booking');
       }
     } catch (err) {
       console.error('Cancel error:', err);
-      alert('Failed to cancel booking. Please try again.');
+      notify.message('Failed to cancel booking. Please try again.');
     } finally {
       setCancelling(false);
     }
@@ -123,7 +129,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
     const userId = localStorage.getItem('userId');
     
     if (!userId) {
-      alert('User not logged in');
+      notify.message('User not logged in');
       return;
     }
 
@@ -143,17 +149,17 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
       const data = await res.json();
       
       if (data.success) {
-        alert('Date change request submitted successfully!\n\nYour request will be reviewed by our team and you will be notified within 24-48 hours.');
+        notify.message('Date change request submitted successfully!\n\nYour request will be reviewed by our team and you will be notified within 24-48 hours.');
         if (data.booking) {
           onUpdate(data.booking);
         }
         setShowCancelOptions(false);
       } else {
-        alert(data.message || 'Failed to submit date change request');
+        notify.message(data.message || 'Failed to submit date change request');
       }
     } catch (err) {
       console.error('Date change request error:', err);
-      alert('Failed to submit request. Please try again.');
+      notify.message('Failed to submit request. Please try again.');
     } finally {
       setRequestingDateChange(false);
     }
@@ -164,8 +170,8 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
     await handleCancelTour();
   };
 
-  const paidAmount = (booking.payments || []).filter(p => (p.status === 'SUCCESS' || p.status === 'Success')).reduce((s, p) => s + (p.amount || 0), 0);
-  const totalAmount = booking.totalAmount || booking.amount || 0;
+  const paidAmount = paymentTotals(booking).gross;
+  const totalAmount = booking.finalAmount ?? booking.totalAmount ?? booking.amount ?? 0;
   const isFullyPaid = paidAmount >= totalAmount && totalAmount > 0;
   const bookingConfirmed = (booking.status || '').toString().toUpperCase() === 'CONFIRMED' || (booking.status || '').toString().toUpperCase() === 'COMPLETED';
 
@@ -173,14 +179,17 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
         <div className="flex justify-between items-center">
-          <h3 className="text-xl font-bold">Booking Details</h3>
+          <div>
+            <h3 className="text-xl font-bold">Booking Details</h3>
+            <p className="font-mono text-sm text-gray-600 dark:text-gray-300">{bookingLabel(booking)}</p>
+          </div>
           <button onClick={onClose} className="text-gray-600">Close</button>
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-500">Package</p>
-            <p className="font-semibold">{booking.package?.title || booking.packageTitle || '—'}</p>
+            <p className="font-semibold">{booking.packageId?.title || booking.package?.title || booking.packageTitle || '—'}</p>
 
             <p className="mt-3 text-sm text-gray-500">Dates</p>
             <p className="font-semibold">{booking.startDate} → {booking.endDate}</p>
@@ -218,8 +227,8 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                 <p className="text-sm text-gray-500">Payment status</p>
                 <p className="font-semibold">
                   {(() => {
-                    const paid = (booking.payments || []).filter(p => (p.status === 'SUCCESS' || p.status === 'Success')).reduce((s, p) => s + (p.amount || 0), 0);
-                    const total = booking.totalAmount || booking.amount || 0;
+                    const paid = (booking.payments || []).filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND').reduce((s, p) => s + (p.amount || 0), 0);
+                    const total = booking.finalAmount ?? booking.totalAmount ?? booking.amount ?? 0;
                     if (paid <= 0) return `Not paid (${booking.currency || ''}${0} of ${booking.currency || ''}${total})`;
                     if (paid < total) return `Partially paid (${booking.currency || ''}${paid} of ${booking.currency || ''}${total})`;
                     return `Paid in full (${booking.currency || ''}${paid})`;
@@ -230,6 +239,13 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
           </div>
         </div>
 
+        {booking.customizations && (
+          <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-700 p-4">
+            <p className="font-semibold">Your preferences</p>
+            <p className="mt-2 whitespace-pre-wrap">{booking.customizations}</p>
+          </div>
+        )}
+
         <div className="mt-6 flex space-x-3">
           {booking.status !== 'CANCELLED' && booking.status !== 'REFUNDED' && (
             <button 
@@ -239,7 +255,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
               View Invoice
             </button>
           )}
-          {booking.status !== 'CANCELLED' && booking.status !== 'REFUNDED' && !isFullyPaid && !bookingConfirmed && (
+          {booking.status !== 'CANCELLED' && booking.status !== 'REFUNDED' && !isFullyPaid && booking.status !== 'COMPLETED' && (
             <button onClick={() => setShowPayment(true)} className="px-4 py-2 bg-primary text-white rounded-lg">Add Payment</button>
           )}
           {isFullyPaid && booking.status !== 'CANCELLED' && booking.status !== 'REFUNDED' && (
@@ -267,6 +283,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
         {booking.payments && booking.payments.length > 0 && (
           <div className="mt-4 bg-gray-50 dark:bg-gray-900 p-4 rounded">
             <h4 className="font-semibold">Payments</h4>
+            {paymentTotals(booking).pending > 0 && <p role="status" className="text-amber-700">Payment submitted — awaiting administrator verification.</p>}
             <ul className="text-sm text-gray-600 mt-2">
               {booking.payments.map((p, idx) => (
                 <li key={idx} className="mb-1">{p.amount} {booking.currency || ''} — {p.method} — <span className="font-semibold">{p.status}</span></li>
@@ -302,7 +319,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
               >
                 <div className="flex items-start">
                   <div className="flex-shrink-0 text-red-500 text-2xl mr-3">
-                    <FaMoneyBillWave />
+                    <LuBanknote aria-hidden="true" />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold text-gray-900 dark:text-white mb-1">
@@ -313,7 +330,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                       Refund amount depends on how far in advance you cancel.
                     </p>
                     <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-semibold flex items-center gap-1.5">
-                      <FaExclamationTriangle className="text-red-500" /> This action cannot be undone
+                      <LuTriangleAlert aria-hidden="true" className="text-red-500" /> This action cannot be undone
                     </p>
                   </div>
                 </div>
@@ -328,7 +345,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0 text-blue-500 text-2xl mr-3">
-                      <FaCalendarAlt />
+                      <LuCalendar aria-hidden="true" />
                     </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-gray-900 dark:text-white mb-1">
@@ -339,7 +356,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdate }) => {
                         Subject to availability and approval.
                       </p>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold flex items-center gap-1">
-                        ✓ No cancellation fees
+                        <CheckIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> No cancellation fees
                       </p>
                     </div>
                   </div>

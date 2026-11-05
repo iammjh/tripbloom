@@ -1,12 +1,14 @@
+import { LuApple, LuBell, LuMap, LuRoute, LuWifi } from 'react-icons/lu';
+import { FaGooglePlay } from 'react-icons/fa';
 import React from 'react';
-import { FaApple, FaGooglePlay, FaMapMarkedAlt, FaRoute, FaWifi, FaBell } from 'react-icons/fa';
+
 
 const MobileApp = () => {
   const appFeatures = [
-    { icon: <FaMapMarkedAlt />, text: 'Live GPS tracking' },
-    { icon: <FaRoute />, text: 'Smart itinerary planner' },
-    { icon: <FaWifi />, text: 'Offline access to bookings' },
-    { icon: <FaBell />, text: 'Emergency alerts & support' }
+    { icon: <LuMap aria-hidden="true" />, text: 'Live GPS tracking' },
+    { icon: <LuRoute aria-hidden="true" />, text: 'Smart itinerary planner' },
+    { icon: <LuWifi aria-hidden="true" />, text: 'Offline access to bookings' },
+    { icon: <LuBell aria-hidden="true" />, text: 'Emergency alerts & support' }
   ];
 
   return (
@@ -34,7 +36,7 @@ const MobileApp = () => {
           {/* Download Buttons */}
           <div className="flex flex-col sm:flex-row gap-4">
             <button className="bg-black text-white px-6 py-3 rounded-lg flex items-center gap-3 hover:bg-gray-900 transition-all duration-300">
-              <FaApple className="text-3xl" />
+              <LuApple aria-hidden="true" className="text-3xl" />
               <div className="text-left">
                 <div className="text-xs">Download on the</div>
                 <div className="text-lg font-bold">App Store</div>

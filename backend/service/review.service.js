@@ -123,7 +123,9 @@ export async function listReviews({ packageId, customerId, status, minRating, ma
   }
 }
 
-// Update review (customer can only edit pending reviews)
+// Update review. The customer can edit a pending review, or a rejected one to fix it and resubmit.
+// Saving a rejected review sends it back to PENDING so the admin moderates the new version; the old rejection note is cleared.
+// Approved reviews cannot be changed.
 export async function updateReview({ reviewId, customerId, rating, comment }) {
   try {
     const review = await Review.findById(reviewId);
@@ -136,13 +138,29 @@ export async function updateReview({ reviewId, customerId, rating, comment }) {
       return { error: 'You can only edit your own reviews' };
     }
 
-    // Only allow editing pending reviews
-    if (review.status !== 'PENDING') {
+    if (review.status !== 'PENDING' && review.status !== 'REJECTED') {
       return { error: `Cannot edit ${review.status.toLowerCase()} reviews` };
     }
 
-    if (rating !== undefined) review.rating = rating;
-    if (comment !== undefined) review.comment = comment;
+    if (rating !== undefined) {
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        return { error: 'Rating must be a whole number from 1 to 5' };
+      }
+      review.rating = rating;
+    }
+
+    if (comment !== undefined) {
+      const text = typeof comment === 'string' ? comment.trim() : '';
+      if (text.length < 10 || text.length > 1000) {
+        return { error: 'Review text must be between 10 and 1000 characters' };
+      }
+      review.comment = text;
+    }
+
+    if (review.status === 'REJECTED') {
+      review.status = 'PENDING';
+      review.moderatorNote = undefined;
+    }
 
     await review.save();
 
@@ -214,19 +232,9 @@ export async function moderateReview({ reviewId, status, moderatorNote }) {
 // Mark review as helpful (increment helpful count)
 export async function markReviewHelpful(reviewId) {
   try {
-    const review = await Review.findById(reviewId);
-    if (!review) {
-      return { error: 'Review not found' };
-    }
-
-    review.helpful += 1;
-    await review.save();
-
-    return { review };
-  } catch (err) {
-    console.error('Error marking review helpful:', err);
-    return { error: 'Failed to mark review helpful' };
-  }
+    const review = await Review.findOneAndUpdate({ _id: reviewId, status: 'APPROVED' }, { $inc: { helpful: 1 } }, { new: true }).populate('customerId', 'fullName').populate('packageId', 'title');
+    return review ? { review } : { error: 'Review not found' };
+  } catch { return { error: 'Unable to update review.' }; }
 }
 
 // Get package rating statistics

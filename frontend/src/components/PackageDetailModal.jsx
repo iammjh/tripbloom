@@ -1,53 +1,74 @@
 import React, { useState, useEffect } from 'react';
-import ReactDOM from 'react-dom';
+import { LuBed, LuCalendarDays, LuCar, LuClock, LuMapPin, LuPencil, LuSparkles, LuTriangleAlert, LuUserCog, LuUsers, LuUtensils } from 'react-icons/lu';
 import axios from 'axios';
-import { 
-  FaTimes, FaMapMarkerAlt, FaStar, FaDollarSign, FaCalendarAlt, 
-  FaUsers, FaBed, FaUtensils, FaCar, FaUserTie, FaClock, FaRoute,
-  FaExclamationTriangle, FaPercentage, FaChartLine
-} from 'react-icons/fa';
+import { PlaneIcon } from './ui/icons.js';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import Badge from './ui/Badge.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import StarRating from './ui/StarRating.jsx';
+import { AdminTable, tdClass, thClass } from './admin/AdminPrimitives.jsx';
+import { bookingLabel } from '../utils/bookingCode.js';
 
+const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const money = (amount) => `BDT ${Number(amount || 0).toLocaleString()}`;
+
+const BOOKING_TONE = { PENDING: 'warning', CONFIRMED: 'success', CANCELLED: 'danger', COMPLETED: 'info', REFUNDED: 'neutral' };
+const DEPARTURE_TONE = { OPEN: 'success', FULL: 'warning', CLOSED: 'neutral', CANCELLED: 'danger' };
+
+// Summary tile used in the overview.
+function Stat({ icon: Icon, label, value, children }) {
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-brand/10">
+          <Icon aria-hidden="true" className="h-4 w-4 text-brand" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs text-text-muted">{label}</p>
+          <p className="font-display text-xl font-semibold text-text">{value}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// Package details for administrators: overview, destinations, bookings and group departures.
 const PackageDetailModal = ({ isOpen, onClose, packageData, onEdit, initialTab }) => {
-  const [activeTab, setActiveTab] = useState(initialTab || 'overview'); // overview, destinations, bookings, departures
+  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [bookings, setBookings] = useState([]);
   const [departures, setDepartures] = useState([]);
+  const [ratingStats, setRatingStats] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Lock body scroll when modal is open
+  // Each time the dialog opens, start on the requested tab.
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = 'unset';
-      };
-    }
-  }, [isOpen]);
+    if (isOpen) setActiveTab(initialTab || 'overview');
+  }, [isOpen, initialTab, packageData?._id]);
 
   useEffect(() => {
-    if (isOpen && packageData) {
-      if (activeTab === 'bookings') {
-        fetchBookings();
-      } else if (activeTab === 'departures' && packageData.type === 'GROUP') {
-        fetchDepartures();
-      }
-    }
+    if (!isOpen || !packageData) return;
+    if (activeTab === 'bookings') fetchBookings();
+    else if (activeTab === 'departures' && packageData.type === 'GROUP') fetchDepartures();
   }, [isOpen, packageData, activeTab]);
 
-  // respond to changes in initialTab when modal is opened
+  // Approved-review rating for this package; empty when unavailable.
   useEffect(() => {
-    if (initialTab) setActiveTab(initialTab);
-  }, [initialTab]);
+    if (!isOpen || !packageData?._id) return;
+    axios.get(`/api/packages/${packageData._id}/rating-stats`)
+      .then(res => setRatingStats(res.data.stats))
+      .catch(() => setRatingStats(null));
+  }, [isOpen, packageData?._id]);
 
   const fetchBookings = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/bookings', {
-        params: { packageId: packageData._id }
-      });
+      const res = await axios.get('/api/bookings', { params: { packageId: packageData._id } });
       setBookings(res.data.bookings || []);
     } catch (err) {
       console.error('Failed to fetch bookings:', err);
-      // Use mock data for demo if endpoint doesn't exist
       setBookings([]);
     }
     setLoading(false);
@@ -56,9 +77,7 @@ const PackageDetailModal = ({ isOpen, onClose, packageData, onEdit, initialTab }
   const fetchDepartures = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/admin/group-departures', {
-        params: { packageId: packageData._id }
-      });
+      const res = await axios.get('/api/admin/group-departures', { params: { packageId: packageData._id } });
       setDepartures(res.data.departures || []);
     } catch (err) {
       console.error('Failed to fetch departures:', err);
@@ -66,431 +85,236 @@ const PackageDetailModal = ({ isOpen, onClose, packageData, onEdit, initialTab }
     setLoading(false);
   };
 
-  if (!isOpen || !packageData) return null;
+  if (!packageData) return null;
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
+  const isGroup = packageData.type === 'GROUP';
+  const nights = packageData.defaultNights;
+  const activeBookingsCount = bookings.filter(b => ['PENDING', 'CONFIRMED'].includes(b.status)).length;
+  const totalBookings = packageData.bookingsCount ?? bookings.length;
+  const averageRating = ratingStats?.totalReviews ? Number(ratingStats.averageRating) : null;
+  const destinations = [...(packageData.destinations || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const extras = Array.isArray(packageData.extras) ? packageData.extras : [];
 
-  const getStatusColor = (status) => {
-    const colors = {
-      OPEN: 'text-green-600 bg-green-100 dark:bg-green-900/20',
-      FULL: 'text-orange-600 bg-orange-100 dark:bg-orange-900/20',
-      CANCELLED: 'text-red-600 bg-red-100 dark:bg-red-900/20',
-      CLOSED: 'text-gray-600 bg-gray-100 dark:bg-gray-900/20',
-      PENDING: 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/20',
-      CONFIRMED: 'text-green-600 bg-green-100 dark:bg-green-900/20',
-      COMPLETED: 'text-blue-600 bg-blue-100 dark:bg-blue-900/20'
-    };
-    return colors[status] || 'text-gray-600 bg-gray-100';
-  };
-
-  // Check if package has active bookings
-  const activeBookingsCount = bookings.filter(b => 
-    ['PENDING', 'CONFIRMED'].includes(b.status)
-  ).length;
-
-  // Calculate profit margin (mock calculation)
-  const calculateMargin = () => {
-    const estimatedCost = packageData.basePrice * 0.7; // Assume 70% cost
-    const margin = ((packageData.basePrice - estimatedCost) / packageData.basePrice * 100).toFixed(1);
-    return parseFloat(margin);
-  };
-
-  const profitMargin = calculateMargin();
-  const isLowMargin = profitMargin < 20;
+  const inclusions = [
+    { key: 'transport', icon: LuCar, label: 'Transport', text: packageData.inclusions?.transport },
+    { key: 'hotel', icon: LuBed, label: 'Accommodation', text: packageData.inclusions?.hotel },
+    { key: 'meals', icon: LuUtensils, label: 'Meals', text: packageData.inclusions?.meals },
+    { key: 'guide', icon: LuUserCog, label: 'Tour guide', text: packageData.inclusions?.guide ? 'Professional guide included' : '' },
+  ].filter(item => item.text);
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: FaChartLine },
-    { id: 'destinations', label: 'Destinations', icon: FaMapMarkerAlt },
-    { id: 'bookings', label: 'Bookings', icon: FaUsers, badge: bookings.length },
+    { id: 'overview', label: 'Overview' },
+    { id: 'destinations', label: 'Destinations', count: destinations.length },
+    { id: 'bookings', label: 'Bookings', count: bookings.length },
+    ...(isGroup ? [{ id: 'departures', label: 'Departures', count: departures.length }] : []),
   ];
 
-  if (packageData.type === 'GROUP') {
-    tabs.push({ 
-      id: 'departures', 
-      label: 'Group Departures', 
-      icon: FaCalendarAlt, 
-      badge: departures.length 
-    });
-  }
-
-  const modalContent = (
-    <div className="fixed inset-0 overflow-y-auto" style={{ zIndex: 99999 }}>
-      <div className="flex min-h-screen items-center justify-center p-4">
-        {/* Backdrop */}
-        <div 
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity" 
-          onClick={onClose}
-        ></div>
-        
-        {/* Modal Content */}
-        <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden animate-scale-in" style={{ zIndex: 99999 }}>
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
-          >
-            <FaTimes size={24} />
-          </button>
-
-          {/* Header */}
-          <div className={`p-8 text-white ${
-            packageData.type === 'GROUP' 
-              ? 'bg-gradient-to-r from-blue-600 to-blue-700' 
-              : 'bg-gradient-to-r from-purple-600 to-purple-700'
-          }`}>
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-3xl font-bold mb-2">{packageData.title}</h2>
-                <div className="flex items-center space-x-4 text-sm">
-                  <span className="px-3 py-1 bg-white/20 rounded-full">
-                    {packageData.type}
-                  </span>
-                  {packageData.category && (
-                    <span className="px-3 py-1 bg-white/20 rounded-full">
-                      {packageData.category}
-                    </span>
-                  )}
-                  {packageData.isInternational && (
-                    <span className="px-3 py-1 bg-white/20 rounded-full flex items-center">
-                      ✈️ International
-                    </span>
-                  )}
-                  <span className="flex items-center">
-                    <FaClock className="mr-1" />
-                    {packageData.defaultDays}D/{packageData.defaultNights}N
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm opacity-90">Base Price</div>
-                <div className="text-4xl font-bold">${packageData.basePrice?.toLocaleString()}</div>
-              </div>
-            </div>
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={packageData.title || 'Tour package'}
+      description={`${isGroup ? 'Group tour' : 'Personal tour'} · ${packageData.defaultDays} days, ${nights} nights`}
+      size="xl"
+      rootClassName="dark"
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button variant="secondary" icon={LuPencil} onClick={() => onEdit && onEdit(packageData)}>Edit package</Button>
+        </>
+      )}
+    >
+      <div className="space-y-6">
+        {/* Summary */}
+        <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={isGroup ? 'info' : 'brand'}>{isGroup ? 'Group tour' : 'Personal tour'}</Badge>
+            {packageData.category && <Badge tone="neutral">{packageData.category}</Badge>}
+            {packageData.isInternational && <Badge tone="info" icon={PlaneIcon}>International</Badge>}
+            <Badge tone={packageData.isActive === false ? 'neutral' : 'success'}>{packageData.isActive === false ? 'Hidden from customers' : 'Visible to customers'}</Badge>
+            {packageData.code && <Badge tone="neutral">Code {packageData.code}</Badge>}
           </div>
-
-          {/* Warnings Banner */}
-          {(activeBookingsCount > 0 || isLowMargin) && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800 p-4">
-              {activeBookingsCount > 0 && (
-                <div className="flex items-start text-yellow-800 dark:text-yellow-300 mb-2">
-                  <FaExclamationTriangle className="mt-1 mr-2 flex-shrink-0" />
-                  <div className="text-sm">
-                    <strong>Warning:</strong> This package has {activeBookingsCount} active booking(s). 
-                    Changes will only apply to future bookings after today's date.
-                  </div>
-                </div>
-              )}
-              {isLowMargin && (
-                <div className="flex items-start text-orange-800 dark:text-orange-300">
-                  <FaPercentage className="mt-1 mr-2 flex-shrink-0" />
-                  <div className="text-sm">
-                    <strong>Low Margin Alert:</strong> Profit margin is {profitMargin}% 
-                    (below 20% threshold). Consider reviewing pricing or discounts.
-                  </div>
-                </div>
-              )}
+          <div className="flex flex-wrap items-center gap-6">
+            <span className="inline-flex items-center gap-1.5 text-sm text-text-muted">
+              <LuClock aria-hidden="true" className="h-4 w-4" />
+              {packageData.defaultDays}D / {nights}N
+            </span>
+            <div className="text-right">
+              <p className="text-xs text-text-muted">Base price</p>
+              <p className="font-display text-2xl font-semibold text-brand">{money(packageData.basePrice)}</p>
             </div>
-          )}
-
-          {/* Tabs */}
-          <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-            <div className="flex space-x-1 px-8">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 px-6 py-4 font-semibold border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-primary text-primary bg-white dark:bg-gray-800'
-                      : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <tab.icon />
-                  <span>{tab.label}</span>
-                  {tab.badge !== undefined && tab.badge > 0 && (
-                    <span className="ml-2 px-2 py-0.5 bg-primary text-white text-xs rounded-full">
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          <div className="p-8 max-h-[60vh] overflow-y-auto">
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-              <div className="space-y-6">
-                {/* Description */}
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">Description</h3>
-                  <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
-                    {packageData.description || 'No description available.'}
-                  </p>
-                </div>
-
-                {/* Inclusions */}
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Inclusions</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {packageData.inclusions?.transport && (
-                      <div className="flex items-start space-x-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                        <FaCar className="text-blue-600 dark:text-blue-400 text-xl mt-1" />
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Transport</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">{packageData.inclusions.transport}</div>
-                        </div>
-                      </div>
-                    )}
-                    {packageData.inclusions?.hotel && (
-                      <div className="flex items-start space-x-3 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                        <FaBed className="text-purple-600 dark:text-purple-400 text-xl mt-1" />
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Hotel</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">{packageData.inclusions.hotel}</div>
-                        </div>
-                      </div>
-                    )}
-                    {packageData.inclusions?.meals && (
-                      <div className="flex items-start space-x-3 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                        <FaUtensils className="text-orange-600 dark:text-orange-400 text-xl mt-1" />
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Meals</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">{packageData.inclusions.meals}</div>
-                        </div>
-                      </div>
-                    )}
-                    {packageData.inclusions?.guide && (
-                      <div className="flex items-start space-x-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <FaUserTie className="text-green-600 dark:text-green-400 text-xl mt-1" />
-                        <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">Tour Guide</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">Professional guide included</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Extras */}
-                {packageData.extras && packageData.extras.length > 0 && (
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">Extras</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {packageData.extras.map((extra, index) => (
-                        <span 
-                          key={index}
-                          className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm"
-                        >
-                          {extra}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">
-                      {packageData.bookingsCount || 0}
-                    </div>
-                    <div className="text-sm text-blue-700 dark:text-blue-400">Total Bookings</div>
-                  </div>
-                  <div className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">
-                      {packageData.avgRating || 0} <FaStar className="inline text-yellow-500" />
-                    </div>
-                    <div className="text-sm text-yellow-700 dark:text-yellow-400">Avg Rating</div>
-                  </div>
-                  <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-green-900 dark:text-green-300">
-                      {profitMargin}%
-                    </div>
-                    <div className="text-sm text-green-700 dark:text-green-400">Profit Margin</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Destinations Tab */}
-            {activeTab === 'destinations' && (
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Trip Timeline</h3>
-                {packageData.destinations && packageData.destinations.length > 0 ? (
-                  <div className="relative">
-                    {/* Timeline line */}
-                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary to-green-300"></div>
-                    
-                    <div className="space-y-6">
-                      {packageData.destinations
-                        .sort((a, b) => (a.order || 0) - (b.order || 0))
-                        .map((dest, index) => (
-                          <div key={index} className="relative pl-16">
-                            {/* Timeline dot */}
-                            <div className="absolute left-3 top-3 w-6 h-6 bg-primary rounded-full border-4 border-white dark:border-gray-800 shadow-lg flex items-center justify-center text-white text-xs font-bold">
-                              {dest.order || index + 1}
-                            </div>
-                            
-                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
-                                    {dest.name}
-                                  </h4>
-                                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    <FaMapMarkerAlt className="inline mr-1" />
-                                    {dest.city && `${dest.city}, `}{dest.country}
-                                  </p>
-                                </div>
-                                <span className="px-3 py-1 bg-primary text-white rounded-full text-xs font-semibold">
-                                  Day {dest.order || index + 1}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                    No destinations configured
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Bookings Tab */}
-            {activeTab === 'bookings' && (
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Package Bookings</h3>
-                {loading ? (
-                  <div className="text-center py-8 text-primary">Loading bookings...</div>
-                ) : bookings.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-700">
-                          <th className="text-left py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Booking ID</th>
-                          <th className="text-left py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Customer</th>
-                          <th className="text-center py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Travelers</th>
-                          <th className="text-center py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Start Date</th>
-                          <th className="text-center py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Amount</th>
-                          <th className="text-center py-2 px-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bookings.map((booking) => (
-                          <tr key={booking._id} className="border-b border-gray-100 dark:border-gray-700">
-                            <td className="py-3 px-3 text-sm font-mono text-gray-600 dark:text-gray-400">
-                              #{booking._id.slice(-6)}
-                            </td>
-                            <td className="py-3 px-3 text-sm text-gray-900 dark:text-white">
-                              {booking.customerId?.fullName || 'N/A'}
-                            </td>
-                            <td className="py-3 px-3 text-center text-sm text-gray-900 dark:text-white">
-                              {booking.numTravelers}
-                            </td>
-                            <td className="py-3 px-3 text-center text-sm text-gray-600 dark:text-gray-400">
-                              {formatDate(booking.startDate)}
-                            </td>
-                            <td className="py-3 px-3 text-center text-sm font-semibold text-gray-900 dark:text-white">
-                              ${booking.totalAmount?.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                                {booking.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                    No bookings found for this package
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Group Departures Tab */}
-            {activeTab === 'departures' && packageData.type === 'GROUP' && (
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Group Departures</h3>
-                {loading ? (
-                  <div className="text-center py-8 text-primary">Loading departures...</div>
-                ) : departures.length > 0 ? (
-                  <div className="space-y-3">
-                    {departures.map((departure) => (
-                      <div
-                        key={departure._id}
-                        className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <FaCalendarAlt className="text-primary" />
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              {formatDate(departure.startDate)} - {formatDate(departure.endDate)}
-                            </span>
-                          </div>
-                          <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 space-x-4">
-                            <span>
-                              Seats: {departure.bookedSeats}/{departure.totalSeats}
-                            </span>
-                            <span>
-                              Operators: {departure.operators?.length || 0}
-                            </span>
-                          </div>
-                        </div>
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(departure.status)}`}>
-                          {departure.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                    No group departures scheduled
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Footer Actions */}
-          <div className="bg-gray-50 dark:bg-gray-900 px-8 py-4 flex justify-between items-center border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
-            >
-              Close
-            </button>
-            <button
-              onClick={() => {
-                if (onEdit) {
-                  onEdit(packageData);
-                }
-              }}
-              className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
-            >
-              Edit Package
-            </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
 
-  return ReactDOM.createPortal(modalContent, document.body);
+        {activeBookingsCount > 0 && (
+          <p role="alert" className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
+            <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-warning" />
+            <span>This package has {activeBookingsCount} active booking(s). Changes apply to future bookings only.</span>
+          </p>
+        )}
+
+        {/* Tabs */}
+        <div role="tablist" aria-label="Package sections" className="glass flex flex-wrap gap-1 rounded-full p-1">
+          {tabs.map(tab => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition-colors ${selected ? 'bg-brand text-on-brand shadow-sm' : 'text-text-muted hover:text-text'}`}
+              >
+                <span>{tab.label}</span>
+                {tab.count > 0 && <span className={`rounded-full px-2 text-xs ${selected ? 'bg-on-brand/20' : 'bg-surface-muted'}`}>{tab.count}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Overview */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Stat icon={LuUsers} label="Total bookings" value={totalBookings ?? '—'} />
+              <Stat icon={LuSparkles} label="Average rating" value={averageRating !== null ? averageRating.toFixed(1) : '—'}>
+                {averageRating !== null && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <StarRating value={averageRating} />
+                    <span className="text-xs text-text-muted">{ratingStats.totalReviews} review{ratingStats.totalReviews === 1 ? '' : 's'}</span>
+                  </div>
+                )}
+              </Stat>
+              <Stat icon={LuCalendarDays} label="Extras included" value={extras.length} />
+            </div>
+
+            <section aria-labelledby="package-description-heading" className="space-y-2">
+              <h3 id="package-description-heading" className="font-display text-base font-semibold text-text">Description</h3>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-text-muted">{packageData.description || 'No description yet.'}</p>
+            </section>
+
+            <section aria-labelledby="package-inclusions-heading" className="space-y-3">
+              <h3 id="package-inclusions-heading" className="font-display text-base font-semibold text-text">Inclusions</h3>
+              {inclusions.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {inclusions.map(item => (
+                    <div key={item.key} className="glass flex items-start gap-3 rounded-2xl p-4">
+                      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-brand/10">
+                        <item.icon aria-hidden="true" className="h-4 w-4 text-brand" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-text">{item.label}</p>
+                        <p className="text-sm text-text-muted">{item.text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted">Nothing listed as included.</p>
+              )}
+            </section>
+
+            {extras.length > 0 && (
+              <section aria-labelledby="package-extras-heading" className="space-y-3">
+                <h3 id="package-extras-heading" className="font-display text-base font-semibold text-text">Extras</h3>
+                <ul className="flex flex-wrap gap-2">
+                  {extras.map((extra, index) => (
+                    <li key={index}><Badge tone="neutral">{extra}</Badge></li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        )}
+
+        {/* Destinations */}
+        {activeTab === 'destinations' && (
+          destinations.length > 0 ? (
+            <ol className="relative space-y-4 border-l-2 border-border pl-8">
+              {destinations.map((dest, index) => (
+                <li key={index} className="relative">
+                  <span className="absolute -left-[2.875rem] top-4 flex h-7 w-7 items-center justify-center rounded-full bg-brand text-xs font-bold text-on-brand ring-4 ring-surface">
+                    {dest.order || index + 1}
+                  </span>
+                  <div className="glass flex items-start justify-between gap-3 rounded-2xl p-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-text">{dest.name}</p>
+                      <p className="mt-0.5 flex items-center gap-1 text-sm text-text-muted">
+                        <LuMapPin aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+                        {[dest.city, dest.country].filter(Boolean).join(', ') || 'Location not set'}
+                      </p>
+                    </div>
+                    <Badge tone="brand">Day {dest.order || index + 1}</Badge>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <EmptyState title="No destinations yet" description="Add the places this tour visits in the package editor." />
+          )
+        )}
+
+        {/* Bookings */}
+        {activeTab === 'bookings' && (
+          loading ? (
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          ) : bookings.length === 0 ? (
+            <EmptyState title="No bookings for this package" description="Bookings made for this package appear here." />
+          ) : (
+            <AdminTable label="Package bookings" minWidth={760}>
+              <thead>
+                <tr>
+                  <th scope="col" className={thClass}>Booking</th>
+                  <th scope="col" className={thClass}>Customer</th>
+                  <th scope="col" className={thClass}>Travellers</th>
+                  <th scope="col" className={thClass}>Start</th>
+                  <th scope="col" className={thClass}>Amount</th>
+                  <th scope="col" className={thClass}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.map(booking => (
+                  <tr key={booking._id}>
+                    <td className={`${tdClass} font-semibold text-brand`}>{bookingLabel(booking)}</td>
+                    <td className={tdClass}>{booking.customerId?.fullName || 'N/A'}</td>
+                    <td className={tdClass}>{booking.numTravelers}</td>
+                    <td className={`${tdClass} whitespace-nowrap`}>{formatDate(booking.startDate)}</td>
+                    <td className={`${tdClass} whitespace-nowrap`}>{money(booking.totalAmount)}</td>
+                    <td className={tdClass}><Badge tone={BOOKING_TONE[booking.status] || 'neutral'}>{booking.status}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </AdminTable>
+          )
+        )}
+
+        {/* Group departures */}
+        {activeTab === 'departures' && isGroup && (
+          loading ? (
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          ) : departures.length === 0 ? (
+            <EmptyState title="No departures scheduled" description="Group departures for this package appear here." />
+          ) : (
+            <ul className="space-y-3">
+              {departures.map(departure => (
+                <li key={departure._id} className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-text">{formatDate(departure.startDate)} – {formatDate(departure.endDate)}</p>
+                    <p className="mt-0.5 flex flex-wrap gap-x-4 text-sm text-text-muted">
+                      <span>Seats {departure.bookedSeats}/{departure.totalSeats}</span>
+                      <span>Operators {departure.operators?.length || 0}</span>
+                    </p>
+                  </div>
+                  <Badge tone={DEPARTURE_TONE[departure.status] || 'neutral'}>{departure.status}</Badge>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+      </div>
+    </Modal>
+  );
 };
 
 export default PackageDetailModal;

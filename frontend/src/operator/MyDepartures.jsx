@@ -1,5 +1,6 @@
+import { LuBus, LuCalendar, LuCircleAlert, LuCircleCheck, LuClock, LuFilter, LuSearch, LuUsers } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
-import { FaBus, FaFilter, FaSearch, FaCalendarAlt, FaUsers, FaExclamationCircle, FaCheckCircle, FaClock } from 'react-icons/fa';
+
 import DepartureDetailPage from './DepartureDetailPage';
 
 const MyDepartures = () => {
@@ -81,21 +82,21 @@ const MyDepartures = () => {
     const end = new Date(dep.endDate);
 
     if (dep.status === 'CANCELLED') {
-      return { label: 'CANCELLED', color: 'red', icon: FaExclamationCircle };
+      return { label: 'CANCELLED', color: 'red', icon: LuCircleAlert };
     }
     if (start <= now && now <= end) {
-      return { label: 'IN PROGRESS', color: 'green', icon: FaClock };
+      return { label: 'IN PROGRESS', color: 'green', icon: LuClock };
     }
     if (end < now) {
-      return { label: 'COMPLETED', color: 'gray', icon: FaCheckCircle };
+      return { label: 'COMPLETED', color: 'gray', icon: LuCircleCheck };
     }
     if (dep.bookedSeats >= dep.totalSeats) {
-      return { label: 'FULL', color: 'purple', icon: FaUsers };
+      return { label: 'FULL', color: 'purple', icon: LuUsers };
     }
     if (dep.status === 'OPEN') {
-      return { label: 'SCHEDULED', color: 'blue', icon: FaCalendarAlt };
+      return { label: 'SCHEDULED', color: 'blue', icon: LuCalendar };
     }
-    return { label: dep.status, color: 'gray', icon: FaCalendarAlt };
+    return { label: dep.status, color: 'gray', icon: LuCalendar };
   };
 
   const hasWarning = (dep) => {
@@ -106,9 +107,10 @@ const MyDepartures = () => {
       warnings.push('OVERBOOKED');
     }
     
-    // Check if within 24h without itinerary (mock check)
+    // Within 24 hours of departure with no itinerary days recorded yet
     const hoursUntil = (new Date(dep.startDate) - new Date()) / (1000 * 60 * 60);
-    if (hoursUntil > 0 && hoursUntil < 24) {
+    const hasItinerary = Array.isArray(dep.itinerary) && dep.itinerary.some(day => Array.isArray(day.stops) && day.stops.length > 0);
+    if (hoursUntil > 0 && hoursUntil < 24 && !hasItinerary) {
       warnings.push('ITINERARY PENDING');
     }
     
@@ -152,7 +154,7 @@ const MyDepartures = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <FaBus className="mr-3 text-orange-600" />
+            <LuBus aria-hidden="true" className="mr-3 text-orange-600" />
             My Departures
           </h1>
           <span className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-full font-semibold text-lg">
@@ -164,7 +166,7 @@ const MyDepartures = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div className="relative">
-            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <LuSearch aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search tours..."
@@ -240,7 +242,7 @@ const MyDepartures = () => {
               {filteredDepartures.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-6 py-12 text-center">
-                    <FaBus className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                    <LuBus aria-hidden="true" className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-600 dark:text-gray-400 text-lg">No departures found</p>
                     <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">Try adjusting your filters</p>
                   </td>

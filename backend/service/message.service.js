@@ -14,8 +14,8 @@ export async function sendMessage({ tourId, senderId, recipientId, content, isBr
   });
   
   await message.save();
-  await message.populate('senderId', 'fullName name email');
-  await message.populate('recipientId', 'fullName name email');
+  await message.populate('senderId', 'fullName');
+  await message.populate('recipientId', 'fullName');
   
   return { message };
 }
@@ -26,8 +26,8 @@ export async function getMessages({ tourId, recipientId }) {
   if (recipientId) query.recipientId = recipientId;
   return await Message.find(query)
     .sort({ sentAt: 1 })
-    .populate('senderId', 'fullName name email')
-    .populate('recipientId', 'fullName name email');
+    .populate('senderId', 'fullName')
+    .populate('recipientId', 'fullName');
 }
 
 // Get messages for a specific booking
@@ -35,15 +35,15 @@ export async function getBookingMessages({ bookingId }) {
   const query = { bookingId };
   return await Message.find(query)
     .sort({ sentAt: 1 })
-    .populate('senderId', 'fullName name email')
-    .populate('recipientId', 'fullName name email');
+    .populate('senderId', 'fullName')
+    .populate('recipientId', 'fullName');
 }
 
 // Get broadcast messages for a tour
 export async function getBroadcastMessages({ tourId }) {
   return await Message.find({ tourId, isBroadcast: true })
     .sort({ sentAt: 1 })
-    .populate('senderId', 'fullName name email');
+    .populate('senderId', 'fullName');
 }
 
 // Get conversation between two users (both directions)
@@ -57,6 +57,6 @@ export async function getConversation({ userA, userB }) {
   };
   return await Message.find(query)
     .sort({ sentAt: 1 })
-    .populate('senderId', 'fullName name email')
-    .populate('recipientId', 'fullName name email');
+    .populate('senderId', 'fullName')
+    .populate('recipientId', 'fullName');
 }

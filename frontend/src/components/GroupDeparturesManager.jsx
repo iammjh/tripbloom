@@ -1,10 +1,13 @@
+import { LuCalendar, LuList } from 'react-icons/lu';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState } from 'react';
 import GroupDeparturesCalendar from './GroupDeparturesCalendar';
 import GroupDeparturesList from './GroupDeparturesList';
 import GroupDepartureDetailModal from './GroupDepartureDetailModal';
 import CreateDepartureModal from './CreateDepartureModal';
 import EditDepartureModal from './EditDepartureModal';
-import { FaCalendarAlt, FaList } from 'react-icons/fa';
+
 
 const GroupDeparturesManager = () => {
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' or 'list'
@@ -37,7 +40,7 @@ const GroupDeparturesManager = () => {
   };
 
   const handleDeleteDeparture = async (departure) => {
-    if (!confirm(`Are you sure you want to delete the departure for "${departure.packageId?.title || 'this package'}"?\n\nStart Date: ${new Date(departure.startDate).toLocaleDateString()}\nThis action cannot be undone.`)) {
+    if (!(await confirmAction({ message: `Are you sure you want to delete the departure for "${departure.packageId?.title || 'this package'}"?\n\nStart Date: ${new Date(departure.startDate).toLocaleDateString()}\nThis action cannot be undone.`, danger: true }))) {
       return;
     }
 
@@ -47,34 +50,34 @@ const GroupDeparturesManager = () => {
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error('Failed to delete departure:', err);
-      alert(err.response?.data?.message || 'Failed to delete departure');
+      notify.message(err.response?.data?.message || 'Failed to delete departure');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 dark:bg-gray-900 p-6 space-y-6">
+    <div className="min-h-screen bg-surface p-6 space-y-6">
       {/* View Toggle */}
       <div className="flex items-center space-x-4">
         <button
           onClick={() => setViewMode('calendar')}
           className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-all ${
             viewMode === 'calendar'
-              ? 'bg-primary text-white shadow-lg'
-              : 'bg-gray-800 dark:bg-gray-800 text-gray-300 dark:text-gray-300 hover:shadow-md'
+              ? 'bg-brand text-white shadow-lg'
+              : 'bg-surface text-text hover:shadow-md'
           }`}
         >
-          <FaCalendarAlt />
+          <LuCalendar aria-hidden="true" />
           <span>Calendar View</span>
         </button>
         <button
           onClick={() => setViewMode('list')}
           className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-all ${
             viewMode === 'list'
-              ? 'bg-primary text-white shadow-lg'
-              : 'bg-gray-800 dark:bg-gray-800 text-gray-300 dark:text-gray-300 hover:shadow-md'
+              ? 'bg-brand text-white shadow-lg'
+              : 'bg-surface text-text hover:shadow-md'
           }`}
         >
-          <FaList />
+          <LuList aria-hidden="true" />
           <span>List View</span>
         </button>
       </div>

@@ -1,3 +1,4 @@
+import { requireDepartureAccess, isAdmin } from '../service/access.service.js';
 // groupDeparture.controller.js
 import {
   createGroupDeparture,
@@ -21,9 +22,10 @@ import {
 
 export async function createGroupDepartureController(req, res) {
   // Accept operatorIds and assignedBy from frontend
-  const { packageId, startDate, endDate, totalSeats, pricePerPerson, operatorIds, assignedBy } = req.body;
+  const { packageId, startDate, endDate, totalSeats, pricePerPerson, operatorIds } = req.body;
+  const assignedBy = req.user.id;
   const result = await createGroupDeparture({ packageId, startDate, endDate, totalSeats, pricePerPerson, operatorIds, assignedBy });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
   res.json({ success: true, message: 'Group departure created successfully.', departure: result.departure });
 }
 
@@ -45,19 +47,26 @@ function verifyDepartureAccess(departure, user) {
 }
 
 export async function updateGroupDepartureController(req, res) {
-  const { departureId } = req.params;
-  const departureResult = await getGroupDepartureById({ departureId });
-  if (departureResult.error || !departureResult.departure) {
-    return res.status(404).json({ success: false, message: departureResult.error || 'Departure not found.' });
+  try {
+    const { departureId } = req.params;
+    const found = await getGroupDepartureById({ departureId });
+    if (found.error || !found.departure) return res.status(404).json({ success: false, message: found.error || 'Departure not found.' });
+    if (!verifyDepartureAccess(found.departure, req.user)) return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
+    const isAdmin = (req.user.roles || []).some(role => role.toLowerCase() === 'admin');
+    const operational = ['seatMap', 'seatMapChecked', 'safetyChecklist', 'itinerary', 'tourStarted', 'status'];
+    const administrative = ['startDate', 'endDate', 'totalSeats', 'pricePerPerson', 'operatorIds'];
+    if (!isAdmin && administrative.some(key => Object.hasOwn(req.body, key))) return res.status(403).json({ success: false, message: 'Only admins can change departure dates, prices, capacity or assignments.' });
+    const allowed = isAdmin ? [...operational, ...administrative] : operational;
+    if (Object.keys(req.body).some(key => !allowed.includes(key) && key !== 'assignedBy')) return res.status(400).json({ success: false, message: 'Unsupported departure update field.' });
+    if (!isAdmin && Object.hasOwn(req.body, 'assignedBy')) return res.status(403).json({ success: false, message: 'Only admins can change operator assignments.' });
+    const patch = Object.fromEntries(allowed.filter(key => Object.hasOwn(req.body, key)).map(key => [key, req.body[key]]));
+    patch.assignedBy = req.user.id;
+    const result = await updateGroupDeparture({ departureId, ...patch });
+    if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+    res.json({ success: true, message: 'Group departure updated successfully.', departure: result.departure });
+  } catch (error) {
+    res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({ success: false, message: 'Unable to save departure updates.' });
   }
-  if (!verifyDepartureAccess(departureResult.departure, req.user)) {
-    return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this departure.' });
-  }
-
-  const { startDate, endDate, totalSeats, pricePerPerson, status, operatorIds, assignedBy } = req.body;
-  const result = await updateGroupDeparture({ departureId, startDate, endDate, totalSeats, pricePerPerson, status, operatorIds, assignedBy });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
-  res.json({ success: true, message: 'Group departure updated successfully.', departure: result.departure });
 }
 
 export async function listGroupDeparturesController(req, res) {
@@ -80,7 +89,7 @@ export async function getGroupDepartureByIdController(req, res) {
 export async function deleteGroupDepartureController(req, res) {
   const { departureId } = req.params;
   const result = await deleteGroupDeparture({ departureId });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
   res.json({ success: true, message: 'Departure deleted successfully.' });
 }
 
@@ -95,8 +104,8 @@ export async function setGroupDepartureStatusController(req, res) {
   }
 
   const { status } = req.body;
-  const result = await setGroupDepartureStatus({ departureId, status });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
+  const result = await setGroupDepartureStatus({ departureId, status, assignedBy: req.user.id });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
   res.json({ success: true, message: `Departure status set to ${status}.`, departure: result.departure });
 }
 
@@ -104,9 +113,9 @@ export async function setGroupDepartureStatusController(req, res) {
 export async function assignOperatorsToDepartureController(req, res) {
   const { departureId } = req.params;
   const { operatorIds } = req.body;
-  const result = await assignOperatorsToDeparture({ departureId, operatorIds });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
-  const message = result.departure && result.departure.assignedOperators.length > 0
+  const result = await assignOperatorsToDeparture({ departureId, operatorIds, assignedBy: req.user.id });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+  const message = result.departure && result.departure.operators.length > 0
     ? 'Operators assigned successfully.'
     : 'No operators were assigned.';
   res.json({ success: true, message, departure: result.departure });
@@ -114,6 +123,7 @@ export async function assignOperatorsToDepartureController(req, res) {
 
 // List operators assigned to a group departure
 export async function listOperatorsForDepartureController(req, res) {
+  await requireDepartureAccess(req.params.departureId, req.user);
   const { departureId } = req.params;
   const result = await listOperatorsForDeparture({ departureId });
   if (result.error) return res.status(404).json({ success: false, message: result.error });
@@ -127,14 +137,15 @@ export async function listOperatorsForDepartureController(req, res) {
 export async function reassignOperatorForDepartureController(req, res) {
   const { departureId } = req.params;
   const { oldOperatorId, newOperatorId } = req.body;
-  const result = await reassignOperatorForDeparture({ departureId, oldOperatorId, newOperatorId });
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
+  const result = await reassignOperatorForDeparture({ departureId, oldOperatorId, newOperatorId, assignedBy: req.user.id });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
   const message = 'Operator reassigned successfully.';
   res.json({ success: true, message, departure: result.departure });
 }
 
 // Find future departures for operator (for deactivation/reassignment)
 export async function findFutureDeparturesForOperatorController(req, res) {
+  if (!isAdmin(req.user) && req.params.operatorId !== req.user.id) return res.status(403).json({ success: false, message: 'Operator access denied.' });
   const { operatorId } = req.params;
   const result = await findFutureDeparturesForOperator({ operatorId });
   const message = result.length === 0
@@ -162,9 +173,9 @@ export async function addOperatorToDepartureController(req, res) {
     return res.status(400).json({ success: false, message: 'operatorId is required.' });
   }
   
-  const result = await addOperatorToDeparture({ departureId, operatorId });
+  const result = await addOperatorToDeparture({ departureId, operatorId, assignedBy: req.user.id });
   if (result.error) {
-    return res.status(400).json({ success: false, message: result.error });
+    return res.status(result.status || 400).json({ success: false, message: result.error });
   }
   
   res.json({ success: true, message: 'Operator added successfully.', departure: result.departure });
@@ -176,7 +187,7 @@ export async function removeOperatorFromDepartureController(req, res) {
   
   const result = await removeOperatorFromDeparture({ departureId, operatorId });
   if (result.error) {
-    return res.status(400).json({ success: false, message: result.error });
+    return res.status(result.status || 400).json({ success: false, message: result.error });
   }
   
   res.json({ success: true, message: 'Operator removed successfully.', departure: result.departure });
@@ -212,7 +223,7 @@ export async function updateSeatMapController(req, res) {
   }
   const result = await updateGroupDeparture({ departureId, seatMap });
   if (result.error) {
-    return res.status(400).json({ success: false, message: result.error });
+    return res.status(result.status || 400).json({ success: false, message: result.error });
   }
   res.json({ success: true, message: 'Seat map updated successfully.', seatMap: result.departure.seatMap });
 }

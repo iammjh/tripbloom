@@ -1,6 +1,9 @@
+import { LuMail, LuPhone, LuSend, LuUserCog, LuX } from 'react-icons/lu';
+import { ChatIcon } from './ui/icons.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { FaTimes, FaPaperPlane, FaUserTie, FaPhone, FaEnvelope } from 'react-icons/fa';
+
 import axios from 'axios';
 
 const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
@@ -131,7 +134,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
       }
     } catch (err) {
       console.error('Failed to send message:', err);
-      alert('Failed to send message. Please try again.');
+      notify.message('Failed to send message. Please try again.');
     }
     setSending(false);
   };
@@ -160,7 +163,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-primary to-green-600">
           <div className="flex items-center gap-4">
             <div className="bg-white text-primary p-3 rounded-full">
-              <FaUserTie className="text-2xl" />
+              <LuUserCog aria-hidden="true" className="text-2xl" />
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white">
@@ -172,10 +175,11 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
             </div>
           </div>
           <button
+            aria-label="Close"
             onClick={onClose}
             className="text-white hover:bg-white/20 p-2 rounded-full transition-colors"
           >
-            <FaTimes size={24} />
+            <LuX aria-hidden="true" size={24} />
           </button>
         </div>
 
@@ -187,7 +191,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
                 href={`tel:${operatorInfo.phone}`}
                 className="flex items-center gap-2 text-primary dark:text-blue-400 hover:underline"
               >
-                <FaPhone />
+                <LuPhone aria-hidden="true" />
                 {operatorInfo.phone}
               </a>
             )}
@@ -196,7 +200,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
                 href={`mailto:${operatorInfo.email}`}
                 className="flex items-center gap-2 text-primary dark:text-blue-400 hover:underline"
               >
-                <FaEnvelope />
+                <LuMail aria-hidden="true" />
                 {operatorInfo.email}
               </a>
             )}
@@ -213,7 +217,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
         >
           {messages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="text-6xl mb-4">💬</div>
+              <ChatIcon aria-hidden="true" className="mx-auto mb-4 h-16 w-16 text-text-muted" />
               <p className="text-gray-500 dark:text-gray-400">
                 No messages yet. Start the conversation!
               </p>
@@ -267,7 +271,7 @@ const OperatorChatModal = ({ isOpen, onClose, booking, operator }) => {
               disabled={!newMessage.trim() || sending}
               className="px-6 py-3 bg-gradient-to-r from-primary to-green-600 text-white font-semibold rounded-xl hover:from-green-600 hover:to-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              <FaPaperPlane />
+              <LuSend aria-hidden="true" />
               Send
             </button>
           </form>

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { paymentTotals } from '../service/paymentAccounting.js';
 
 const travelerSchema = new mongoose.Schema({
   fullName: {
@@ -40,6 +41,10 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  submittedAt: { type: Date },
+  verifiedAt: { type: Date },
+  verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  verificationNote: { type: String, trim: true, maxlength: 1000 },
   paidAt: {
     type: Date
   }
@@ -116,6 +121,8 @@ const dateChangeRequestSchema = new mongoose.Schema({
 }, { _id: false });
 
 const bookingSchema = new mongoose.Schema({
+  // Human-readable code shown on the booking, its refund and its date change, e.g. #RL001.
+  bookingCode: { type: String, trim: true, unique: true, sparse: true, index: true },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -217,6 +224,8 @@ const bookingSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  customizations: { type: String, trim: true, maxlength: 4000, default: '' },
+  operatorNotes: { type: String, trim: true, maxlength: 5000, default: '' },
   assignedOperator: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -234,7 +243,8 @@ const bookingSchema = new mongoose.Schema({
     ref: 'User'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  optimisticConcurrency: true
 });
 
 // Indexes for efficient queries
@@ -251,16 +261,11 @@ bookingSchema.virtual('isActive').get(function() {
 });
 
 // Virtual for total paid amount
-bookingSchema.virtual('totalPaid').get(function() {
-  return this.payments
-    .filter(p => p.status === 'SUCCESS')
-    .reduce((sum, p) => sum + p.amount, 0);
-});
-
-// Virtual for remaining amount
-bookingSchema.virtual('remainingAmount').get(function() {
-  return this.finalAmount - this.totalPaid;
-});
+bookingSchema.virtual('totalPaid').get(function() { return paymentTotals(this).gross; });
+bookingSchema.virtual('netPaid').get(function() { return paymentTotals(this).net; });
+bookingSchema.virtual('remainingAmount').get(function() { return paymentTotals(this).remaining; });
+bookingSchema.set('toJSON', { virtuals: true });
+bookingSchema.set('toObject', { virtuals: true });
 
 // Static method to calculate points for tour category
 bookingSchema.statics.calculatePointsForCategory = function(category, amount) {
@@ -317,7 +322,7 @@ bookingSchema.methods.addPayment = function(paymentData) {
   this.payments.push(paymentData);
   
   // Update status if fully paid
-  if (this.totalPaid >= this.totalAmount) {
+  if (this.totalPaid >= this.finalAmount) {
     this.status = 'CONFIRMED';
   }
   

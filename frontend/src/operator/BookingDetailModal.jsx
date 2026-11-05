@@ -1,25 +1,36 @@
+import { LuCalendar, LuDollarSign, LuMail, LuMap, LuPhone, LuSave, LuTriangleAlert, LuUser, LuUsers, LuX } from 'react-icons/lu';
+import { notify } from '../utils/notifyStore.js';
+import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useState } from 'react';
-import { FaTimes, FaUser, FaEnvelope, FaPhone, FaCalendarAlt, FaDollarSign, FaUsers, FaMapMarkedAlt, FaSave, FaExclamationTriangle } from 'react-icons/fa';
+
+import { saveOperatorNotes } from '../api/bookingOperations';
 
 const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
   const [operatorNotes, setOperatorNotes] = useState(booking.operatorNotes || '');
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const getTotalPaid = () => {
     return (booking.payments || [])
-      .filter(p => p.status === 'SUCCESS')
+      .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
       .reduce((sum, p) => sum + p.amount, 0);
   };
 
-  const remaining = booking.totalAmount - getTotalPaid();
+  const remaining = paymentTotals(booking).remaining;
 
   const handleSaveNotes = async () => {
     setIsSaving(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-    onUpdateNotes(operatorNotes);
-    setIsSaving(false);
-    alert('Notes saved successfully!');
+    setSaveError('');
+    try {
+      const saved = await saveOperatorNotes(booking._id, operatorNotes);
+      setOperatorNotes(saved.operatorNotes);
+      onUpdateNotes(saved.operatorNotes);
+      notify.message('Notes saved successfully!');
+    } catch (error) {
+      setSaveError(error.message || 'Could not save notes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const wasCancelledAfterStart = booking.cancellation?.isCancelled && 
@@ -36,10 +47,11 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
               <p className="text-orange-100">ID: {booking._id}</p>
             </div>
             <button 
+              aria-label="Close" 
               onClick={onClose}
               className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
             >
-              <FaTimes className="text-2xl" />
+              <LuX aria-hidden="true" className="text-2xl" />
             </button>
           </div>
         </div>
@@ -48,7 +60,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
         {wasCancelledAfterStart && (
           <div className="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded">
             <div className="flex items-start">
-              <FaExclamationTriangle className="text-red-600 mt-1 mr-3" />
+              <LuTriangleAlert aria-hidden="true" className="text-red-600 mt-1 mr-3" />
               <div>
                 <h4 className="font-bold text-red-800 dark:text-red-300">Booking Cancelled After Tour Start</h4>
                 <p className="text-sm text-red-700 dark:text-red-400">
@@ -63,7 +75,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
           {/* Customer Details */}
           <div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaUser className="mr-3 text-orange-600" />
+              <LuUser aria-hidden="true" className="mr-3 text-orange-600" />
               Customer Information
             </h3>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -108,7 +120,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
           {/* Package & Dates */}
           <div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaMapMarkedAlt className="mr-3 text-orange-600" />
+              <LuMap aria-hidden="true" className="mr-3 text-orange-600" />
               Package & Travel Details
             </h3>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +149,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
           {/* Travelers List */}
           <div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaUsers className="mr-3 text-orange-600" />
+              <LuUsers aria-hidden="true" className="mr-3 text-orange-600" />
               Travelers ({booking.numTravelers})
             </h3>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
@@ -165,7 +177,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
           {/* Payment Summary (Read-only) */}
           <div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaDollarSign className="mr-3 text-orange-600" />
+              <LuDollarSign aria-hidden="true" className="mr-3 text-orange-600" />
               Payment Summary (Read-only)
             </h3>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
@@ -223,10 +235,17 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
             </div>
           </div>
 
+          {booking.customizations && (
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Customer preferences</h3>
+              <p className="mt-2 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{booking.customizations}</p>
+            </div>
+          )}
+
           {/* Operator Notes */}
           <div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <FaSave className="mr-3 text-orange-600" />
+              <LuSave aria-hidden="true" className="mr-3 text-orange-600" />
               Operator Notes
             </h3>
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
@@ -236,8 +255,10 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
                 placeholder="Add notes about this booking (e.g., special requests, dietary requirements, etc.)"
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 rows="4"
+                maxLength={5000}
                 disabled={wasCancelledAfterStart}
               />
+              {saveError && <p role="alert" className="mt-2 text-sm text-red-600">{saveError}</p>}
               <div className="mt-3 flex justify-between items-center">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Example: "Customer requested vegetarian meals for all travelers"
@@ -247,7 +268,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
                   disabled={isSaving || wasCancelledAfterStart}
                   className="flex items-center px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <FaSave className="mr-2" />
+                  <LuSave aria-hidden="true" className="mr-2" />
                   {isSaving ? 'Saving...' : 'Save Notes'}
                 </button>
               </div>
@@ -292,6 +313,7 @@ const BookingDetailModal = ({ booking, onClose, onUpdateNotes }) => {
         {/* Footer */}
         <div className="sticky bottom-0 bg-gray-100 dark:bg-gray-900 p-6 rounded-b-2xl flex justify-end gap-3">
           <button 
+            aria-label="Close" 
             onClick={onClose}
             className="px-6 py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold transition-colors"
           >

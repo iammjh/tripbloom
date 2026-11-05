@@ -1,5 +1,6 @@
+import { LuBook, LuCalendar, LuCircleCheck, LuCircleX, LuClock, LuDollarSign, LuFilter, LuSearch, LuUsers } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
-import { FaBook, FaFilter, FaSearch, FaCalendarAlt, FaDollarSign, FaCheckCircle, FaTimesCircle, FaUsers, FaClock } from 'react-icons/fa';
+
 import BookingDetailModal from './BookingDetailModal';
 
 const MyBookings = () => {
@@ -131,23 +132,23 @@ const MyBookings = () => {
 
   const getStatusBadge = (status) => {
     const badges = {
-      PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', icon: FaClock },
-      CONFIRMED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: FaCheckCircle },
-      CANCELLED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: FaTimesCircle },
-      COMPLETED: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', icon: FaCheckCircle }
+      PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', icon: LuClock },
+      CONFIRMED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: LuCircleCheck },
+      CANCELLED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: LuCircleX },
+      COMPLETED: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', icon: LuCircleCheck }
     };
     return badges[status] || badges.PENDING;
   };
 
   const getTotalPaid = (payments) => {
     return (payments || [])
-      .filter(p => p.status === 'SUCCESS')
+      .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
       .reduce((sum, p) => sum + p.amount, 0);
   };
 
   const getPaymentStatus = (booking) => {
     const totalPaid = getTotalPaid(booking.payments);
-    const remaining = booking.totalAmount - totalPaid;
+    const remaining = (booking.finalAmount ?? booking.totalAmount) - totalPaid;
     
     if (remaining <= 0) return { label: 'Fully Paid', color: 'green' };
     if (totalPaid > 0) return { label: 'Partial', color: 'yellow' };
@@ -171,7 +172,7 @@ const MyBookings = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-            <FaBook className="mr-3 text-orange-600" />
+            <LuBook aria-hidden="true" className="mr-3 text-orange-600" />
             My Bookings
           </h1>
           <span className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-full font-semibold text-lg">
@@ -183,7 +184,7 @@ const MyBookings = () => {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
           <div className="relative">
-            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <LuSearch aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search bookings..."
@@ -274,7 +275,7 @@ const MyBookings = () => {
               {filteredBookings.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="px-6 py-12 text-center">
-                    <FaBook className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                    <LuBook aria-hidden="true" className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-600 dark:text-gray-400 text-lg">No bookings found</p>
                   </td>
                 </tr>
@@ -330,14 +331,14 @@ const MyBookings = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center text-gray-700 dark:text-gray-300">
-                          <FaUsers className="mr-2 text-orange-600" />
+                          <LuUsers aria-hidden="true" className="mr-2 text-orange-600" />
                           <span className="font-semibold">{booking.numTravelers}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm">
                           <div className="font-semibold text-gray-900 dark:text-white">
-                            ৳{getTotalPaid(booking.payments).toLocaleString()} / ৳{booking.totalAmount.toLocaleString()}
+                            ৳{getTotalPaid(booking.payments).toLocaleString()} / ৳{(booking.finalAmount ?? booking.totalAmount).toLocaleString()}
                           </div>
                           <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-${paymentStatus.color}-100 text-${paymentStatus.color}-800 dark:bg-${paymentStatus.color}-900/30 dark:text-${paymentStatus.color}-300`}>
                             {paymentStatus.label}

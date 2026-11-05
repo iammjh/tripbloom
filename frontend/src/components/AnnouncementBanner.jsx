@@ -1,8 +1,7 @@
+import { LuBell, LuCircleCheck, LuInfo, LuTriangleAlert, LuX } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import {
-  FaInfoCircle, FaExclamationTriangle, FaCheckCircle, FaTimes, FaBell
-} from 'react-icons/fa';
+
 
 const AnnouncementBanner = ({ userRole = 'CUSTOMERS' }) => {
   const [announcements, setAnnouncements] = useState([]);
@@ -35,13 +34,13 @@ const AnnouncementBanner = ({ userRole = 'CUSTOMERS' }) => {
 
   const getTypeIcon = (type) => {
     const icons = {
-      INFO: FaInfoCircle,
-      WARNING: FaExclamationTriangle,
-      SUCCESS: FaCheckCircle,
-      ERROR: FaTimes,
-      MAINTENANCE: FaBell
+      INFO: LuInfo,
+      WARNING: LuTriangleAlert,
+      SUCCESS: LuCircleCheck,
+      ERROR: LuX,
+      MAINTENANCE: LuBell
     };
-    return icons[type] || FaInfoCircle;
+    return icons[type] || LuInfo;
   };
 
   const getTypeStyles = (type) => {
@@ -118,7 +117,7 @@ const AnnouncementBanner = ({ userRole = 'CUSTOMERS' }) => {
                     className="flex-shrink-0 p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors"
                     aria-label="Dismiss announcement"
                   >
-                    <FaTimes className="text-sm" />
+                    <LuX aria-hidden="true" className="text-sm" />
                   </button>
                 </div>
               </div>

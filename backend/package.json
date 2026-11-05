@@ -8,7 +8,11 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "install-deps": "npm ci --omit=dev",
-    "smoke-test": "node ../scripts/smoke-test.js"
+    "smoke-test": "node ../scripts/smoke-test.js",
+    "test:workflows": "node --test tests/*workflows.test.js",
+    "test:integration": "node tests/integration-workflows.js",
+    "test:browser": "RUN_BROWSER_TESTS=1 node tests/integration-workflows.js",
+    "backfill:booking-codes": "node scripts/backfill-booking-codes.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

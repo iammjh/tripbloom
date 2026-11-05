@@ -38,4 +38,7 @@ const userSchema = new mongoose.Schema({
 });
 
 
+// Authentication can read the stored hash; HTTP serialization never exposes it.
+userSchema.set('toJSON', { transform(doc, value) { delete value.passwordHash; return value; } });
+
 export const User = mongoose.model('User', userSchema);

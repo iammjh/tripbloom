@@ -36,7 +36,7 @@ const UsersManager = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-8">
+    <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
         <UsersList 
           onViewDetails={handleViewDetails}
@@ -49,6 +49,7 @@ const UsersManager = () => {
           onClose={() => setShowDetailModal(false)}
           user={selectedUser}
           onEdit={handleEdit}
+          onUserUpdated={handleUserUpdated}
         />
 
         {/* Show OperatorDetailModal for operators */}
@@ -57,6 +58,7 @@ const UsersManager = () => {
           onClose={() => setShowOperatorModal(false)}
           operator={selectedUser}
           onEdit={handleEdit}
+          onUserUpdated={handleUserUpdated}
         />
 
         <UserEditModal

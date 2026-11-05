@@ -1,6 +1,11 @@
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import { LuClock, LuDollarSign, LuMapPin } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
-import { FaClock, FaDollarSign, FaMapMarkerAlt } from 'react-icons/fa';
-import axios from 'axios';
+
+import { getPublicPackage, listPublicPackages } from '../api/catalog';
 import TourDetailModal from './TourDetailModal';
 
 const PopularDestinations = () => {
@@ -8,6 +13,8 @@ const PopularDestinations = () => {
   const [filter, setFilter] = useState('all');
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const [status, setStatus] = useState('loading'); // loading | ready | error
 
   useEffect(() => {
     fetchDestinations();
@@ -15,10 +22,11 @@ const PopularDestinations = () => {
 
   const fetchDestinations = async () => {
     try {
-      const response = await axios.get('/api/admin/packages');
-      if (response.data.success && response.data.packages) {
+      const packages = await listPublicPackages();
+      if (!packages) setStatus('ready');
+      if (packages) {
         // Transform the tour packages data to match the component's expected format
-        const transformedPackages = response.data.packages
+        const transformedPackages = packages
           .filter(pkg => pkg.isActive) // Only show active packages
           .map(pkg => ({
             id: pkg._id,
@@ -35,15 +43,15 @@ const PopularDestinations = () => {
           }));
         
         // Select only 3 random packages for popular destinations
-        const shuffled = [...transformedPackages].sort(() => 0.5 - Math.random());
-        const selectedPackages = shuffled.slice(0, 3);
+        const selectedPackages = transformedPackages.slice(0, 3);
         
         setDestinations(selectedPackages);
+        setStatus('ready');
       }
     } catch (error) {
       console.error('Error fetching destinations:', error);
-      // Fallback to empty array on error
       setDestinations([]);
+      setStatus('error');
     }
   };
 
@@ -94,29 +102,15 @@ const PopularDestinations = () => {
   const filteredDestinations = destinations;
 
   const handleViewDetails = async (destination) => {
+    setDetailsError('');
     try {
       // Fetch full package details from the backend
-      const response = await axios.get(`/api/admin/packages/${destination.id}`);
-      if (response.data.success && response.data.package) {
-        setSelectedPackage(response.data.package);
-        setIsModalOpen(true);
-      }
+      const pkg = await getPublicPackage(destination.id);
+      setSelectedPackage(pkg);
+      setIsModalOpen(true);
     } catch (error) {
       console.error('Error fetching package details:', error);
-      // Fallback: use the destination data we already have
-      setSelectedPackage({
-        _id: destination.id,
-        title: destination.name,
-        description: destination.description,
-        basePrice: destination.price,
-        defaultDays: parseInt(destination.duration),
-        defaultNights: parseInt(destination.duration) - 1,
-        destinations: destination.destinations,
-        type: destination.type === 'International' ? 'PERSONAL' : 'GROUP',
-        isActive: true,
-        inclusions: {}
-      });
-      setIsModalOpen(true);
+      setDetailsError('This tour could not be loaded. Please try again.');
     }
   };
 
@@ -126,55 +120,51 @@ const PopularDestinations = () => {
   };
 
   return (
-    <div className="w-full bg-transparent backdrop-blur-sm dark:bg-gray-900/60 relative">
-      <div className="absolute inset-0 pointer-events-none z-0 bg-gradient-to-r from-emerald-50/20 via-transparent to-cyan-50/20"></div>
-      <section id="destinations" className="section-container bg-transparent py-12 lg:py-16 relative z-10">
-      <h2 className="section-title dark:text-white animate-fade-in-up">Popular Destinations</h2>
-      <p className="section-subtitle dark:text-gray-300 animate-fade-in-up" style={{animationDelay: '0.1s'}}>
-        Discover our handpicked top destinations - explore more in Tour Categories
-      </p>
+    <section id="destinations" aria-labelledby="destinations-heading" className="bg-surface py-16 lg:py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <header className="mx-auto mb-12 max-w-2xl text-center">
+        <p className="text-sm font-semibold uppercase tracking-wider text-brand">Featured</p>
+        <h2 id="destinations-heading" className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">Popular destinations</h2>
+        <p className="mt-3 text-base text-text-muted">Featured packages from our current catalogue.</p>
+      </header>
+      {detailsError && <p role="alert" className="mb-6 text-center text-red-600 dark:text-red-400">{detailsError}</p>}
 
-      {/* Destinations Grid - Show only 3 packages */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredDestinations.map((destination, index) => (
-          <div
-            key={destination.id}
-            className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-3 hover:scale-105 group animate-fade-in-up"
-            style={{animationDelay: `${0.1 * index}s`}}
-          >
-            <div className="relative h-64 overflow-hidden">
-              <img
-                src={destination.image}
-                alt={destination.name}
-                className="w-full h-full object-cover group-hover:scale-125 transition-transform duration-700"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="absolute top-4 right-4 bg-primary text-white px-4 py-2 rounded-full font-bold">
-                ${destination.price}
-              </div>
+      {status === 'loading' && (
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="overflow-hidden rounded-2xl border border-border bg-surface">
+              <Skeleton className="h-56 w-full rounded-none" />
+              <div className="space-y-3 p-6"><Skeleton className="h-6 w-3/4" /><Skeleton className="h-4 w-1/2" /></div>
             </div>
-            <div className="p-6">
-              <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-3">{destination.name}</h3>
-              <div className="flex items-center gap-4 text-gray-600 dark:text-gray-300 mb-4">
-                <span className="flex items-center gap-2">
-                  <FaClock className="text-primary" />
-                  {destination.duration}
-                </span>
-                <span className="flex items-center gap-2">
-                  <FaMapMarkerAlt className="text-secondary" />
-                  {destination.type}
+          ))}
+        </div>
+      )}
+      {status === 'error' && <ErrorState title="Packages could not be loaded" onRetry={fetchDestinations} />}
+      {status === 'ready' && filteredDestinations.length === 0 && (
+        <EmptyState title="No packages published yet" description="Tour packages appear here as soon as they are published." />
+      )}
+      {status === 'ready' && filteredDestinations.length > 0 && (
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {filteredDestinations.map(destination => (
+            <article key={destination.id} className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm transition-shadow hover:shadow-lg">
+              <div className="relative h-56 overflow-hidden">
+                <img src={destination.image} alt="" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                <span className="absolute right-4 top-4 rounded-full bg-surface px-3 py-1 text-sm font-semibold text-text shadow">
+                  BDT {Number(destination.price || 0).toLocaleString()}
                 </span>
               </div>
-              <button 
-                className="w-full btn-primary"
-                onClick={() => handleViewDetails(destination)}
-              >
-                View Details
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+              <div className="flex flex-1 flex-col p-6">
+                <h3 className="text-xl font-semibold text-text">{destination.name}</h3>
+                <div className="mt-2 flex flex-wrap gap-4 text-sm text-text-muted">
+                  <span className="inline-flex items-center gap-1.5"><LuClock aria-hidden="true" className="h-4 w-4" />{destination.duration}</span>
+                  <span className="inline-flex items-center gap-1.5"><LuMapPin aria-hidden="true" className="h-4 w-4" />{destination.type}</span>
+                </div>
+                <Button className="mt-6 w-full" onClick={() => handleViewDetails(destination)}>View details</Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {/* Tour Detail Modal */}
       <TourDetailModal
@@ -183,8 +173,8 @@ const PopularDestinations = () => {
         packageData={selectedPackage}
         userRole="CUSTOMER"
       />
-      </section>
-    </div>
+      </div>
+    </section>
   );
 };
 

@@ -1,33 +1,35 @@
+import { LuPercent, LuSnowflake, LuSun, LuTag } from 'react-icons/lu';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState } from 'react';
-import { FaTag, FaSnowflake, FaSun, FaPercent } from 'react-icons/fa';
+
 
 const SpecialOffers = () => {
   const [promoCode, setPromoCode] = useState('');
 
   const offers = [
     {
-      icon: <FaTag className="text-4xl" />,
+      icon: <LuTag aria-hidden="true" className="text-4xl" />,
       title: '20% Off Gold Packages',
       description: 'Limited time offer on all Gold tier bookings',
       code: 'GOLD20',
       color: 'from-yellow-400 to-yellow-600'
     },
     {
-      icon: <FaSnowflake className="text-4xl" />,
+      icon: <LuSnowflake aria-hidden="true" className="text-4xl" />,
       title: 'Winter Wonderland Special',
       description: 'Exclusive deals on winter destinations',
       code: 'WINTER25',
       color: 'from-blue-400 to-blue-600'
     },
     {
-      icon: <FaSun className="text-4xl" />,
+      icon: <LuSun aria-hidden="true" className="text-4xl" />,
       title: 'Summer Beach Escape',
       description: 'Up to 30% off on tropical beach tours',
       code: 'BEACH30',
       color: 'from-orange-400 to-red-600'
     },
     {
-      icon: <FaPercent className="text-4xl" />,
+      icon: <LuPercent aria-hidden="true" className="text-4xl" />,
       title: 'Early Bird Discount',
       description: 'Book 3 months in advance and save 15%',
       code: 'EARLY15',
@@ -38,7 +40,7 @@ const SpecialOffers = () => {
   const handleApplyPromo = (e) => {
     e.preventDefault();
     console.log('Applying promo code:', promoCode);
-    alert(`Promo code "${promoCode}" applied!`);
+    notify.message(`Promo code "${promoCode}" applied!`);
   };
 
   return (

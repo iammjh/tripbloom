@@ -1,3 +1,4 @@
+import { isAdmin, userId } from '../service/access.service.js';
 // review.controller.js
 import {
   createReview,
@@ -13,7 +14,10 @@ import {
 
 // Create a new review
 export async function createReviewController(req, res) {
-  const { customerId, packageId, bookingId, rating, comment } = req.body;
+  const { packageId, bookingId, rating, comment } = req.body;
+  const customerId = req.user.id;
+  if (req.body.customerId && req.body.customerId !== customerId) return res.status(403).json({ success: false, message: 'Cannot review as another customer.' });
+  if (!Number.isInteger(rating) || typeof comment !== 'string' || !comment.trim() || comment.length > 5000) return res.status(400).json({ success: false, message: 'Provide an integer rating and review text (up to 5000 characters).' });
 
   // Validate required fields
   if (!customerId || !packageId || !rating || !comment) {
@@ -66,15 +70,19 @@ export async function getReviewByIdController(req, res) {
     });
   }
 
+  const privateView = isAdmin(req.user) || (req.user && userId(result.review.customerId) === req.user.id);
+  if (!privateView && result.review.status !== 'APPROVED') return res.status(404).json({ success: false, message: 'Review not found.' });
   res.json({
     success: true,
-    review: result.review
+    review: privateView ? result.review : publicReview(result.review)
   });
 }
 
 // List reviews with filters
 export async function listReviewsController(req, res) {
-  const { packageId, customerId, status, minRating, maxRating } = req.query;
+  const { packageId, customerId, minRating, maxRating } = req.query;
+  const privateView = isAdmin(req.user) || (req.user && customerId === req.user.id);
+  const status = privateView ? req.query.status : 'APPROVED';
 
   const result = await listReviews({
     packageId,
@@ -93,7 +101,7 @@ export async function listReviewsController(req, res) {
 
   res.json({
     success: true,
-    reviews: result.reviews,
+    reviews: privateView ? result.reviews : result.reviews.map(publicReview),
     count: result.reviews.length
   });
 }
@@ -101,7 +109,9 @@ export async function listReviewsController(req, res) {
 // Update review
 export async function updateReviewController(req, res) {
   const { reviewId } = req.params;
-  const { customerId, rating, comment } = req.body;
+  const { rating, comment } = req.body;
+  const customerId = req.user.id;
+  if (req.body.customerId && req.body.customerId !== customerId) return res.status(403).json({ success: false, message: 'Cannot edit as another customer.' });
 
   if (!customerId) {
     return res.status(400).json({
@@ -134,7 +144,9 @@ export async function updateReviewController(req, res) {
 
   res.json({
     success: true,
-    message: 'Review updated successfully',
+    message: result.review.status === 'PENDING'
+      ? 'Your review was saved and will be published after moderation.'
+      : 'Review updated successfully',
     review: result.review
   });
 }
@@ -142,7 +154,8 @@ export async function updateReviewController(req, res) {
 // Delete review
 export async function deleteReviewController(req, res) {
   const { reviewId } = req.params;
-  const { customerId } = req.body;
+  const customerId = req.user.id;
+  if (req.body.customerId && req.body.customerId !== customerId) return res.status(403).json({ success: false, message: 'Cannot delete as another customer.' });
 
   if (!customerId) {
     return res.status(400).json({
@@ -217,7 +230,7 @@ export async function markReviewHelpfulController(req, res) {
   res.json({
     success: true,
     message: 'Review marked as helpful',
-    review: result.review
+    review: publicReview(result.review)
   });
 }
 
@@ -260,4 +273,12 @@ export async function getCustomerReviewForPackageController(req, res) {
     success: true,
     review: result.review
   });
+}
+
+export function publicReview(review) {
+  const value = typeof review.toObject === 'function' ? review.toObject() : review;
+  return { _id: value._id, rating: value.rating, comment: value.comment, status: value.status, verified: value.verified,
+    helpful: value.helpful, createdAt: value.createdAt,
+    customerId: value.customerId ? { fullName: value.customerId.fullName } : null,
+    packageId: value.packageId ? { _id: value.packageId._id, title: value.packageId.title } : null };
 }

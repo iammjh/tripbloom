@@ -2,9 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic colour tokens (RGB triplets). Tailwind maps them in tailwind.config.js, so light and dark mode change here only. */
+:root {
+  --surface: 255 255 255;
+  --surface-muted: 249 250 251;
+  --border: 229 231 235;
+  --text: 17 24 39;
+  --text-muted: 75 85 99;
+  --brand: 4 120 87;
+  --info: 37 99 235;
+  --success: 21 128 61;
+  --warning: 180 83 9;
+  --danger: 185 28 28;
+  --focus: 59 130 246;
+  --brand-strong: 4 120 87;
+  --on-brand: 255 255 255;
+}
+
+.dark {
+  /* Deep ink-green base; surfaces step up in small increments so depth comes from light, not from grey. */
+  --surface: 9 19 18;
+  --surface-muted: 13 27 25;
+  --border: 36 60 56;
+  --text: 236 245 242;
+  --text-muted: 152 176 170;
+  --brand: 52 211 153;
+  --info: 56 189 248;
+  --success: 74 222 128;
+  --warning: 251 191 36;
+  --danger: 248 113 113;
+  --focus: 94 234 212;
+  --brand-strong: 6 78 59;
+  --on-brand: 6 22 18;
+}
+
 @layer base {
   * {
     @apply box-border;
+  }
+
+  /* Visible keyboard focus everywhere; mouse clicks do not show the ring. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+
+  /* Respect reduced-motion preferences; spinners keep animating so loading stays visible. */
+  @media (prefers-reduced-motion: reduce) {
+    *:not(.animate-spin) {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
   
   body {
@@ -140,12 +190,6 @@
   background-clip: text;
 }
 
-/* Glass morphism */
-.glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
 
 /* Hover glow effect */
 .hover-glow {
@@ -263,4 +307,55 @@ html {
 .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #ea580c;
   background-clip: content-box;
+}
+/* Glassmorphism: one style for floating surfaces (nav, dialogs, notifications, tiles). Colours come from the tokens, so dark mode follows. */
+@layer components {
+  .glass {
+    background-color: rgb(var(--surface) / 0.58);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgb(var(--border) / 0.6);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background-color: rgb(var(--surface) / 0.97);
+    }
+  }
+  /* Soft colour field behind glass surfaces: light tints in light mode, quiet tints in dark mode. */
+  .mesh-bg {
+    background-color: rgb(var(--surface-muted));
+    background-image:
+      radial-gradient(60% 50% at 8% 0%, rgb(var(--brand) / 0.32), transparent 70%),
+      radial-gradient(50% 45% at 92% 8%, rgb(var(--info) / 0.28), transparent 70%),
+      radial-gradient(60% 50% at 50% 100%, rgb(var(--warning) / 0.16), transparent 70%);
+  }
+  .glass-strong {
+    background-color: rgb(var(--surface) / 0.86);
+  }
+  .dark .mesh-bg {
+    background-color: rgb(var(--surface));
+    background-image:
+      radial-gradient(55% 45% at 6% 0%, rgb(var(--brand) / 0.20), transparent 70%),
+      radial-gradient(45% 40% at 96% 12%, rgb(var(--info) / 0.13), transparent 70%),
+      radial-gradient(60% 50% at 50% 100%, rgb(var(--brand) / 0.08), transparent 70%);
+  }
+  /* Dark glass: a cool white veil and a crisp edge, so panels read as glass rather than tinted boxes. */
+  .dark .glass {
+    background-color: rgb(255 255 255 / 0.05);
+    border-color: rgb(255 255 255 / 0.12);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 10px 30px -12px rgb(0 0 0 / 0.5);
+  }
+  .dark .glass-strong {
+    background-color: rgb(9 19 18 / 0.72);
+  }
+}
+
+/* Grid items may shrink below their content width, so wide children scroll inside their own container instead of widening the page. */
+.grid > * {
+  min-width: 0;
+}
+
+/* Native date pickers on dark surfaces (admin pages and dialogs): the calendar icon and popup use the dark scheme, so the icon is light. */
+.dark input[type="date"] {
+  color-scheme: dark;
 }

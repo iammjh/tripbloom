@@ -1,13 +1,12 @@
+import {LuMenu, LuX} from 'react-icons/lu';
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FaBars, FaTimes, FaMoon, FaSun } from 'react-icons/fa';
-import { useDarkMode } from '../context/DarkModeContext';
+
 import AuthModal from './AuthModal';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const { isDarkMode, toggleDarkMode } = useDarkMode();
 
   const navLinks = [
     { name: 'Home', href: '#home' },
@@ -39,7 +38,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-white/95 dark:bg-gray-900 shadow-lg fixed w-full top-0 z-50 transition-colors duration-300 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
+    <nav className="glass glass-strong shadow-lg fixed w-full top-0 z-50 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -61,13 +60,6 @@ const Navbar = () => {
               </a>
             ))}
             {/* Dark Mode Toggle */}
-            <button
-              onClick={toggleDarkMode}
-              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300"
-              aria-label="Toggle dark mode"
-            >
-              {isDarkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
-            </button>
           </div>
 
           {/* CTA/User Buttons */}
@@ -152,19 +144,12 @@ const Navbar = () => {
           {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center space-x-2">
             {/* Dark Mode Toggle Mobile */}
-            <button
-              onClick={toggleDarkMode}
-              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-              aria-label="Toggle dark mode"
-            >
-              {isDarkMode ? <FaSun size={18} /> : <FaMoon size={18} />}
-            </button>
             
             <button
               onClick={() => setIsOpen(!isOpen)}
               className="text-gray-700 dark:text-gray-300 hover:text-primary"
             >
-              {isOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
+              {isOpen ? <LuX aria-hidden="true" size={24} /> : <LuMenu aria-hidden="true" size={24} />}
             </button>
           </div>
         </div>

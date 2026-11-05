@@ -1,5 +1,8 @@
+import { LuCalendar, LuCircleCheck, LuCircleX, LuClock, LuIdCard, LuMail, LuMapPin, LuPhone, LuSave, LuStar, LuToggleLeft, LuToggleRight, LuUser } from 'react-icons/lu';
+import { userMessage } from '../utils/errorMessage.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect } from 'react';
-import { FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaSave, FaToggleOn, FaToggleOff, FaStar, FaCalendarAlt, FaIdCard, FaCheckCircle, FaClock, FaTimesCircle } from 'react-icons/fa';
+
 
 const OperatorProfile = () => {
   const operatorId = localStorage.getItem('userId');
@@ -40,7 +43,7 @@ const OperatorProfile = () => {
       
       if (!operatorId) {
         console.error('No operatorId found in localStorage');
-        alert('No operator ID found. Please log in again.');
+        notify.message('No operator ID found. Please log in again.');
         setLoading(false);
         return;
       }
@@ -56,9 +59,9 @@ const OperatorProfile = () => {
       
       const data = await res.json();
       
-      console.log('Dashboard API Response:', data);
-      console.log('Profile data:', data.profile);
-      console.log('Profile keys:', data.profile ? Object.keys(data.profile) : 'NO PROFILE');
+
+
+
       
       // Only fetch existing fields from database (fullName, email, phone)
       if (data.profile) {
@@ -66,17 +69,17 @@ const OperatorProfile = () => {
           fullName: data.profile.fullName || '',
           email: data.profile.email || '',
           phone: data.profile.phone || '',
-          address: '', // Keep blank for now
-          languages: '', // Keep blank for now
-          bio: '', // Keep blank for now
-          availability: 'AVAILABLE' // Default value, not stored in DB yet
+          address: '',
+          languages: '',
+          bio: '',
+          availability: data.profile.availability || 'AVAILABLE'
         };
         
-        console.log('Setting profile state:', profileData);
+
         setProfile(profileData);
       } else {
         console.error('No profile data received from API');
-        alert('No profile data found for this operator. API returned: ' + JSON.stringify(data));
+        notify.error('We could not find your operator profile. Please refresh the page or contact support.');
       }
 
       // Calculate stats from departures
@@ -98,7 +101,7 @@ const OperatorProfile = () => {
       setLoading(false);
     } catch (error) {
       console.error('Error fetching profile:', error);
-      alert('Error loading profile: ' + error.message);
+      notify.error(userMessage(error, 'We could not load your profile. Please refresh the page.'));
       setLoading(false);
     }
   };
@@ -109,103 +112,34 @@ const OperatorProfile = () => {
     setProfile({ ...profile, [field]: value });
   };
 
-  const toggleAvailability = () => {
-    const newStatus = profile.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE';
-    const operatorId = localStorage.getItem('userId');
+  const persistProfile = async patch => {
+    const res = await fetch(`/api/operator/${operatorId}/profile`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch)
+    });
+    const data = await res.json();
+    if (!res.ok || !data.profile) throw new Error(data.message || data.error || 'Unable to save profile.');
+    setProfile(previous => ({ ...previous, ...data.profile }));
+    if (data.profile.fullName) localStorage.setItem('userName', data.profile.fullName);
+    return data.profile;
+  };
 
-    // If setting to UNAVAILABLE, ensure there are no future departures assigned
-    if (newStatus === 'UNAVAILABLE') {
-      (async () => {
-        try {
-          const res = await fetch(`/api/group-departure/operator/${operatorId}/future`);
-          if (res.ok) {
-            const data = await res.json();
-            const departures = data.departures || [];
-            if (departures.length > 0) {
-              alert('You have future/ongoing departures assigned. Please complete or reassign them before going unavailable.');
-              return;
-            }
-            // no future departures, proceed to set unavailable
-            setProfile(prev => ({ ...prev, availability: newStatus }));
-          } else {
-            // If API failed, be conservative and block change
-            alert('Failed to verify assigned departures. Try again later.');
-            return;
-          }
-        } catch (err) {
-          console.error('Error checking future departures', err);
-          alert('Network error checking assigned departures. Try again later.');
-          return;
-        }
-
-        // persist to server
-        (async () => {
-          try {
-            const res = await fetch(`/api/operator/${operatorId}/profile`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ availability: newStatus })
-            });
-            if (!res.ok) {
-              const txt = await res.text();
-              console.error('Failed to update availability:', res.status, txt);
-              alert('Failed to update availability. Reverting.');
-              // revert UI
-              setProfile(prev => ({ ...prev, availability: prev.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' }));
-            } else {
-              const data = await res.json();
-              if (data.profile && data.profile.availability) setProfile(prev => ({ ...prev, availability: data.profile.availability }));
-            }
-          } catch (err) {
-            console.error('Error updating availability', err);
-            alert('Network error updating availability.');
-            setProfile(prev => ({ ...prev, availability: prev.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' }));
-          }
-        })();
-      })();
-      return;
-    }
-
-    // For switching to AVAILABLE, proceed directly
-    setProfile({ ...profile, availability: newStatus });
-    // persist to server
-    (async () => {
-      try {
-        const operatorId = localStorage.getItem('userId');
-        const res = await fetch(`/api/operator/${operatorId}/profile`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ availability: newStatus })
-        });
-        if (!res.ok) {
-          const txt = await res.text();
-          console.error('Failed to update availability:', res.status, txt);
-          alert('Failed to update availability. Reverting.');
-          // revert UI
-          setProfile(prev => ({ ...prev, availability: prev.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' }));
-        } else {
-          const data = await res.json();
-          // update saved profile from server
-          if (data.profile && data.profile.availability) {
-            setProfile(prev => ({ ...prev, availability: data.profile.availability }));
-          }
-        }
-      } catch (err) {
-        console.error('Error updating availability', err);
-        alert('Network error updating availability.');
-        setProfile(prev => ({ ...prev, availability: prev.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' }));
-      }
-    })();
+  const toggleAvailability = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await persistProfile({ availability: profile.availability === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE' });
+    } catch (error) { notify.error(userMessage(error, 'Your changes could not be saved. Please try again.')); }
+    finally { setSaving(false); }
   };
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
-    
-    // For now, just show a message that only basic info is editable
-    // In future, this will save to database when new fields are added to schema
-    alert('ℹ️ Currently only viewing profile data from database.\nFull edit functionality will be enabled when additional fields are added to the database schema.');
-    
-    setSaving(false);
+    try {
+      await persistProfile({ fullName: profile.fullName, email: profile.email, phone: profile.phone });
+      notify.message('Profile saved successfully.');
+    } catch (error) { notify.error(userMessage(error, 'Your changes could not be saved. Please try again.')); }
+    finally { setSaving(false); }
   };
 
   const loadKYC = async () => {
@@ -229,7 +163,7 @@ const OperatorProfile = () => {
     try {
       const userId = operatorId;
       if (!userId) {
-        alert('Operator not logged in');
+        notify.message('Operator not logged in');
         setKycLoading(false);
         return;
       }
@@ -241,15 +175,15 @@ const OperatorProfile = () => {
       const res = await fetch('/api/kyc/submit', { method: 'POST', headers: { 'x-user-id': userId }, body: formData });
       const data = await res.json();
       if (data.success) {
-        alert('KYC submitted successfully. Awaiting verification.');
+        notify.message('KYC submitted successfully. Awaiting verification.');
         setKycForm({ documentType: 'passport', documentNumber: '', documentPhoto: null });
         loadKYC();
       } else {
-        alert('Failed to submit KYC: ' + (data.message || 'Unknown error'));
+        notify.message('Failed to submit KYC: ' + (data.message || 'Unknown error'));
       }
     } catch (err) {
       console.error('KYC submit error', err);
-      alert('Network error submitting KYC');
+      notify.message('Network error submitting KYC');
     } finally {
       setKycLoading(false);
     }
@@ -260,11 +194,11 @@ const OperatorProfile = () => {
     switch (s) {
       case 'VERIFIED':
       case 'APPROVED':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"><FaCheckCircle className="mr-1" /> Verified</span>;
+        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"><LuCircleCheck aria-hidden="true" className="mr-1" /> Verified</span>;
       case 'PENDING':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"><FaClock className="mr-1" /> Pending</span>;
+        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"><LuClock aria-hidden="true" className="mr-1" /> Pending</span>;
       case 'REJECTED':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"><FaTimesCircle className="mr-1" /> Rejected</span>;
+        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"><LuCircleX aria-hidden="true" className="mr-1" /> Rejected</span>;
       default:
         return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400">Not Submitted</span>;
     }
@@ -292,7 +226,7 @@ const OperatorProfile = () => {
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-          <FaUser className="mr-3 text-orange-600" />
+          <LuUser aria-hidden="true" className="mr-3 text-orange-600" />
           Operator Profile
         </h1>
       </div>
@@ -309,7 +243,7 @@ const OperatorProfile = () => {
                   <p className="text-sm text-orange-100">Completed Tours</p>
                   <p className="text-3xl font-bold">{stats.completedTours}</p>
                 </div>
-                <FaCalendarAlt className="text-4xl text-white/50" />
+                <LuCalendar aria-hidden="true" className="text-4xl text-white/50" />
               </div>
             </div>
 
@@ -319,7 +253,7 @@ const OperatorProfile = () => {
                   <p className="text-sm text-orange-100">Total Travelers</p>
                   <p className="text-3xl font-bold">{stats.totalTravelers}</p>
                 </div>
-                <FaUser className="text-4xl text-white/50" />
+                <LuUser aria-hidden="true" className="text-4xl text-white/50" />
               </div>
             </div>
 
@@ -328,11 +262,11 @@ const OperatorProfile = () => {
                 <div>
                   <p className="text-sm text-orange-100">Rating</p>
                   <p className="text-3xl font-bold flex items-center">
-                    {stats.rating} <FaStar className="ml-2 text-yellow-300" />
+                    {stats.rating} <LuStar aria-hidden="true" className="ml-2 text-yellow-300" />
                   </p>
                   <p className="text-xs text-orange-100">{stats.totalReviews} reviews</p>
                 </div>
-                <FaStar className="text-4xl text-white/50" />
+                <LuStar aria-hidden="true" className="text-4xl text-white/50" />
               </div>
             </div>
           </div>
@@ -350,7 +284,7 @@ const OperatorProfile = () => {
                 Full Name
               </label>
               <div className="relative">
-                <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <LuUser aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   value={profile.fullName}
@@ -367,7 +301,7 @@ const OperatorProfile = () => {
                   Email
                 </label>
                 <div className="relative">
-                  <FaEnvelope className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <LuMail aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input
                     type="email"
                     value={profile.email}
@@ -383,7 +317,7 @@ const OperatorProfile = () => {
                   Phone
                 </label>
                 <div className="relative">
-                  <FaPhone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <LuPhone aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input
                     type="tel"
                     value={profile.phone}
@@ -400,7 +334,7 @@ const OperatorProfile = () => {
                 Address <span className="text-xs text-gray-500">(Not in database yet)</span>
               </label>
               <div className="relative">
-                <FaMapMarkerAlt className="absolute left-3 top-3 text-gray-400" />
+                <LuMapPin aria-hidden="true" className="absolute left-3 top-3 text-gray-400" />
                 <textarea
                   value={profile.address}
                   placeholder="This field will be available when added to database schema"
@@ -462,6 +396,7 @@ const OperatorProfile = () => {
           
           <button
             onClick={toggleAvailability}
+            disabled={saving}
             className={`flex items-center px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-105 ${
               profile.availability === 'AVAILABLE'
                 ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -470,12 +405,12 @@ const OperatorProfile = () => {
           >
             {profile.availability === 'AVAILABLE' ? (
               <>
-                <FaToggleOn className="mr-3 text-2xl" />
+                <LuToggleRight aria-hidden="true" className="mr-3 text-2xl" />
                 Available
               </>
             ) : (
               <>
-                <FaToggleOff className="mr-3 text-2xl" />
+                <LuToggleLeft aria-hidden="true" className="mr-3 text-2xl" />
                 Unavailable
               </>
             )}
@@ -548,7 +483,7 @@ const OperatorProfile = () => {
           disabled={saving}
           className="flex items-center px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <FaSave className="mr-3" />
+          <LuSave aria-hidden="true" className="mr-3" />
           {saving ? 'Saving...' : 'Save Profile'}
         </button>
       </div>

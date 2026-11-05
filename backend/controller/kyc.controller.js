@@ -6,6 +6,7 @@ import {
 } from "../service/kyc.service.js";
 import { sendMessage } from "../service/message.service.js";
 import { User } from "../model/user.model.js";
+import { logActivity } from "../service/activityLog.service.js";
 
 export const submitKYCController = async (req, res) => {
   try {
@@ -65,15 +66,19 @@ export const verifyKYCController = async (req, res) => {
 
     const kyc = await updateKYCStatus(req.params.id, status, remarks);
 
+    await logActivity({
+      adminId: req.user?.id,
+      action: status === 'approved' ? 'KYC_APPROVED' : 'KYC_REJECTED',
+      targetType: 'User',
+      targetId: kyc.user?._id || kyc.user,
+      description: `${status === 'approved' ? 'Approved' : 'Rejected'} KYC submission${remarks ? ': ' + remarks : ''}`,
+      ipAddress: req.ip,
+    });
+
     // Send notification message to the user when KYC is approved/rejected
     try {
       const recipientId = kyc.user?._id || kyc.user || null;
-      // determine sender: prefer x-user-id header, else pick any admin user as sender
-      let senderId = req.headers['x-user-id'] || req.headers['user-id'];
-      if (!senderId) {
-        const adminUser = await User.findOne({ roles: { $in: ['admin', 'ADMIN'] } }).select('_id');
-        if (adminUser) senderId = adminUser._id;
-      }
+      const senderId = req.user.id;
 
       if (recipientId && senderId) {
         const content = status === 'approved'

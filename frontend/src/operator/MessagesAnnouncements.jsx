@@ -1,5 +1,8 @@
+import { LuMegaphone, LuMessagesSquare, LuSearch, LuSend, LuUser, LuUsers } from 'react-icons/lu';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect, useRef } from 'react';
-import { FaComments, FaPaperPlane, FaUsers, FaBullhorn, FaUser, FaSearch } from 'react-icons/fa';
+
 
 const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) => {
   const operatorId = localStorage.getItem('userId');
@@ -194,7 +197,8 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
 
       // Fetch admin->operator conversations (global admin messages)
       try {
-        const usersRes = await fetch('/api/users');
+        const usersRes = await fetch('/api/support/contacts');
+        if (!usersRes.ok) throw new Error('Support contacts unavailable');
         const usersData = await usersRes.json();
         const usersList = Array.isArray(usersData) ? usersData : (usersData.users || []);
         const admins = usersList.filter(u => {
@@ -357,7 +361,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
   const sendMessage = () => {
     if (!newMessage.trim() || !selectedConversation) return;
     if (selectedConversation.type === 'broadcast') {
-      alert('Use the Broadcast tab to send announcements to all travelers.');
+      notify.message('Use the Broadcast tab to send announcements to all travelers.');
       return;
     }
     
@@ -401,16 +405,16 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
       }
     }).catch(err => {
       console.error('Failed to send message:', err);
-      alert('Failed to send message. Please try again.');
+      notify.message('Failed to send message. Please try again.');
     });
   };
 
-  const sendBroadcast = () => {
+  const sendBroadcast = async () => {
     if (!broadcastMessage.trim() || !selectedTour) {
-      alert('Please select a tour and enter a message');
+      notify.message('Please select a tour and enter a message');
       return;
     }
-    if (window.confirm(`Send this message to all travelers on ${tours.find(t => t._id === selectedTour)?.packageId?.title}?`)) {
+    if (await confirmAction({ message: `Send this message to all travelers on ${tours.find(t => t._id === selectedTour)?.packageId?.title}?` })) {
       fetch('/api/messages/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -422,7 +426,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
         })
       }).then(res => res.json()).then(data => {
         if (data.success) {
-          alert('Broadcast message sent successfully!');
+          notify.message('Broadcast message sent successfully!');
           setBroadcastMessage('');
           setSelectedTour('');
         }
@@ -451,7 +455,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
               onClick={() => setActiveTab('conversations')}
               className={`flex items-center px-6 py-4 font-semibold border-b-2 transition-colors ${activeTab === 'conversations' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
             >
-              <FaUser className="mr-2" />
+              <LuUser aria-hidden="true" className="mr-2" />
               1-on-1 Conversations
               {conversations.reduce((sum, c) => sum + c.unread, 0) > 0 && (
                 <span className="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
@@ -463,7 +467,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
               onClick={() => setActiveTab('broadcast')}
               className={`flex items-center px-6 py-4 font-semibold border-b-2 transition-colors ${activeTab === 'broadcast' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
             >
-              <FaBullhorn className="mr-2" />
+              <LuMegaphone aria-hidden="true" className="mr-2" />
               Broadcast to Tour
             </button>
           </div>
@@ -475,7 +479,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
               <div className="lg:col-span-1 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col h-full max-h-full overflow-hidden">
                 <div className="bg-gray-50 dark:bg-gray-900/50 p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                   <div className="relative">
-                    <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <LuSearch aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search conversations..."
@@ -486,7 +490,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                 <div className="divide-y divide-gray-200 dark:divide-gray-700 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-orange-500 scrollbar-track-gray-200 dark:scrollbar-track-gray-700">
                   {conversations.length === 0 ? (
                     <div className="p-8 text-center text-gray-600 dark:text-gray-400">
-                      <FaUser className="text-5xl mx-auto mb-3 opacity-30" />
+                      <LuUser aria-hidden="true" className="text-5xl mx-auto mb-3 opacity-30" />
                       <p className="font-medium">No conversations yet</p>
                       <p className="text-sm mt-1">Messages from customers will appear here</p>
                     </div>
@@ -511,7 +515,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                             <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-900 dark:text-white text-base truncate">{conv.customerName}</h4>
                               <p className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center gap-1">
-                                <FaComments className="text-[10px]" />
+                                <LuMessagesSquare aria-hidden="true" className="text-[10px]" />
                                 {conv.tourName}
                               </p>
                             </div>
@@ -533,7 +537,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
                       <div className="w-24 h-24 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 dark:from-orange-900 dark:to-orange-800 flex items-center justify-center mx-auto mb-4">
-                        <FaComments className="text-4xl text-orange-600 dark:text-orange-400" />
+                        <LuMessagesSquare aria-hidden="true" className="text-4xl text-orange-600 dark:text-orange-400" />
                       </div>
                       <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Conversation Selected</h3>
                       <p className="text-gray-600 dark:text-gray-400">Choose a conversation from the list to start messaging</p>
@@ -550,7 +554,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                         <div>
                           <h3 className="font-bold text-xl">{selectedConversation.customerName}</h3>
                           <p className="text-sm text-orange-100 flex items-center gap-2">
-                            <FaComments className="text-xs" />
+                            <LuMessagesSquare aria-hidden="true" className="text-xs" />
                             {selectedConversation.tourName}
                           </p>
                         </div>
@@ -562,7 +566,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                         {messages.length === 0 ? (
                           <div className="flex items-center justify-center min-h-[400px]">
                             <div className="text-center text-gray-500 dark:text-gray-400">
-                              <FaComments className="text-5xl mx-auto mb-3 opacity-30" />
+                              <LuMessagesSquare aria-hidden="true" className="text-5xl mx-auto mb-3 opacity-30" />
                               <p className="font-medium">No messages yet</p>
                               <p className="text-sm mt-1">Start the conversation below</p>
                             </div>
@@ -624,7 +628,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                           disabled={!newMessage.trim()}
                           className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed text-white rounded-xl font-semibold flex items-center gap-2 shadow-lg hover:shadow-xl transition-all"
                         >
-                          <FaPaperPlane />
+                          <LuSend aria-hidden="true" />
                           Send
                         </button>
                       </div>
@@ -687,7 +691,7 @@ const MessagesAnnouncements = ({ openBookingId, openAdminId, onAdminOpened }) =>
                     onClick={sendBroadcast}
                     className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold flex items-center"
                   >
-                    <FaBullhorn className="mr-2" />
+                    <LuMegaphone aria-hidden="true" className="mr-2" />
                     Send Broadcast
                   </button>
                 </div>

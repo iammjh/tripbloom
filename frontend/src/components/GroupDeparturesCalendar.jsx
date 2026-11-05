@@ -1,9 +1,7 @@
+import { LuCalendar, LuChevronLeft, LuChevronRight, LuCircle, LuClock, LuMapPin, LuPlus, LuUsers } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  FaChevronLeft, FaChevronRight, FaCalendarAlt, FaCircle,
-  FaMapMarkerAlt, FaUsers, FaClock, FaPlus
-} from 'react-icons/fa';
+
 
 const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -37,12 +35,12 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
 
   const getStatusColor = (status) => {
     const colors = {
-      OPEN: 'bg-green-500',
-      FULL: 'bg-orange-500',
-      CANCELLED: 'bg-red-500',
-      CLOSED: 'bg-gray-500'
+      OPEN: 'bg-success',
+      FULL: 'bg-warning',
+      CANCELLED: 'bg-danger',
+      CLOSED: 'bg-text-muted'
     };
-    return colors[status] || 'bg-blue-500';
+    return colors[status] || 'bg-info';
   };
 
   const getDeparturesForDay = (day) => {
@@ -76,83 +74,83 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
                       'July', 'August', 'September', 'October', 'November', 'December'];
 
   return (
-    <div className="bg-gradient-to-br from-gray-800 to-gray-900 dark:from-gray-800 dark:to-gray-900 rounded-2xl shadow-2xl p-4 border border-gray-700 dark:border-gray-700">
+    <div className="bg-gradient-to-br from-surface to-surface rounded-2xl shadow-2xl p-4 border border-border">
       {/* Compact Header with Navigation */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-2xl font-bold text-white dark:text-white flex items-center">
-            <FaCalendarAlt className="mr-2 text-blue-400 dark:text-blue-400" />
+          <h2 className="text-2xl font-bold text-white flex items-center">
+            <LuCalendar aria-hidden="true" className="mr-2 text-info" />
             Departures Calendar
           </h2>
         </div>
         
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Create Button */}
           <button
             onClick={() => onCreateDeparture && onCreateDeparture()}
-            className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transform hover:scale-105 transition-all font-semibold"
+            className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-info to-info text-white rounded-lg hover:shadow-lg transform hover:scale-105 transition-all font-semibold"
           >
-            <FaPlus />
+            <LuPlus aria-hidden="true" />
             <span>Create Departure</span>
           </button>
           
           {/* Compact Month Navigation */}
-          <div className="flex items-center bg-gray-700 dark:bg-gray-700 rounded-lg shadow-md border border-gray-600 dark:border-gray-600 px-1 py-1">
+          <div className="flex items-center bg-surface-muted rounded-lg shadow-md border border-border px-1 py-1">
             <button
               onClick={prevMonth}
-              className="p-2 hover:bg-blue-900/20 dark:hover:bg-blue-900/20 rounded-md transition-all"
+              className="p-2 hover:bg-info/10 rounded-md transition-all"
               title="Previous Month"
             >
-              <FaChevronLeft className="text-blue-400 dark:text-blue-400" />
+              <LuChevronLeft aria-hidden="true" className="text-info" />
             </button>
-            <span className="text-lg font-bold text-white dark:text-white px-4">
+            <span className="text-lg font-bold text-white px-4">
               {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
             </span>
             <button
               onClick={nextMonth}
-              className="p-2 hover:bg-blue-900/20 dark:hover:bg-blue-900/20 rounded-md transition-all"
+              className="p-2 hover:bg-info/10 rounded-md transition-all"
               title="Next Month"
             >
-              <FaChevronRight className="text-blue-400 dark:text-blue-400" />
+              <LuChevronRight aria-hidden="true" className="text-info" />
             </button>
           </div>
         </div>
       </div>
 
       {/* Compact Legend */}
-      <div className="flex items-center justify-between bg-gray-700 dark:bg-gray-700 rounded-lg px-3 py-2 shadow-sm border border-gray-600 dark:border-gray-600 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-surface-muted rounded-lg px-3 py-2 shadow-sm border border-border mb-3">
         <div className="flex flex-wrap gap-3">
           <div className="flex items-center space-x-1">
-            <FaCircle className="text-green-500 text-[8px]" />
-            <span className="text-xs font-medium text-gray-300 dark:text-gray-300">Open</span>
+            <LuCircle aria-hidden="true" className="text-success text-[8px]" />
+            <span className="text-xs font-medium text-text">Open</span>
           </div>
           <div className="flex items-center space-x-1">
-            <FaCircle className="text-orange-500 text-[8px]" />
-            <span className="text-xs font-medium text-gray-300 dark:text-gray-300">Full</span>
+            <LuCircle aria-hidden="true" className="text-warning text-[8px]" />
+            <span className="text-xs font-medium text-text">Full</span>
           </div>
           <div className="flex items-center space-x-1">
-            <FaCircle className="text-red-500 text-[8px]" />
-            <span className="text-xs font-medium text-gray-300 dark:text-gray-300">Cancelled</span>
+            <LuCircle aria-hidden="true" className="text-danger text-[8px]" />
+            <span className="text-xs font-medium text-text">Cancelled</span>
           </div>
           <div className="flex items-center space-x-1">
-            <FaCircle className="text-gray-500 text-[8px]" />
-            <span className="text-xs font-medium text-gray-300 dark:text-gray-300">Closed</span>
+            <LuCircle aria-hidden="true" className="text-text-muted text-[8px]" />
+            <span className="text-xs font-medium text-text">Closed</span>
           </div>
         </div>
-        <div className="text-xs text-gray-400 dark:text-gray-400 flex items-center">
-          <FaClock className="mr-1 text-[10px]" />
+        <div className="text-xs text-text-muted flex items-center">
+          <LuClock aria-hidden="true" className="mr-1 text-[10px]" />
           {departures.length} departures
         </div>
       </div>
 
       {/* Compact Calendar Grid */}
-      <div className="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-md border border-gray-700 dark:border-gray-700 overflow-hidden">
-        <div className="grid grid-cols-7 gap-0 border-b border-gray-700 dark:border-gray-700">
+      <div className="bg-surface rounded-lg shadow-md border border-border overflow-hidden">
+        <div className="grid grid-cols-7 gap-0 border-b border-border">
           {/* Compact Day headers */}
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
             <div 
               key={day} 
-              className="text-center text-xs font-bold text-gray-300 dark:text-gray-300 py-2 bg-gradient-to-b from-gray-700 to-gray-800 dark:from-gray-700 dark:to-gray-800 border-r border-gray-700 dark:border-gray-700 last:border-r-0"
+              className="text-center text-xs font-bold text-text py-2 bg-gradient-to-b from-surface to-surface border-r border-border last:border-r-0"
             >
               {day}
             </div>
@@ -164,7 +162,7 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
           {[...Array(firstDayOfMonth)].map((_, i) => (
             <div 
               key={`empty-${i}`} 
-              className="h-16 bg-gray-900/30 dark:bg-gray-900/30 border-r border-b border-gray-700 dark:border-gray-700"
+              className="h-16 bg-surface border-r border-b border-border"
             ></div>
           ))}
 
@@ -182,21 +180,21 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
                 key={day}
                 onMouseEnter={(e) => handleDayHover(day, e)}
                 onMouseLeave={() => setHoveredDay(null)}
-                className={`h-16 border-r border-b border-gray-700 dark:border-gray-700 p-1.5 transition-all cursor-pointer relative group ${
+                className={`h-16 border-r border-b border-border p-1.5 transition-all cursor-pointer relative group ${
                   isToday 
-                    ? 'bg-gradient-to-br from-blue-900/50 to-blue-800/50 dark:from-blue-900/50 dark:to-blue-800/50' 
-                    : 'bg-gray-800/50 dark:bg-gray-800/50 hover:bg-gray-700/50 dark:hover:bg-gray-700/50'
+                    ? 'bg-gradient-to-br from-info/50 to-info/50' 
+                    : 'bg-surface hover:bg-surface-muted'
                 }`}
               >
                 {/* Compact Day number */}
                 <div className={`text-xs font-bold mb-1 ${
                   isToday 
-                    ? 'text-blue-400 dark:text-blue-400' 
-                    : 'text-white dark:text-white'
+                    ? 'text-info' 
+                    : 'text-white'
                 }`}>
                   {day}
                   {isToday && (
-                    <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-600 rounded-full animate-pulse"></div>
+                    <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-brand rounded-full animate-pulse"></div>
                   )}
                 </div>
 
@@ -211,7 +209,7 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
                       ></div>
                     ))}
                     {dayDepartures.length > 2 && (
-                      <div className="text-[9px] text-center font-bold bg-gray-700 dark:bg-gray-700 text-gray-300 dark:text-gray-300 rounded-sm py-0.5">
+                      <div className="text-[9px] text-center font-bold bg-surface-muted text-text rounded-sm py-0.5">
                         +{dayDepartures.length - 2}
                       </div>
                     )}
@@ -219,7 +217,7 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
                 )}
 
                 {/* Hover effect border */}
-                <div className="absolute inset-0 border-2 border-blue-500 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                <div className="absolute inset-0 border-2 border-info/30 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
               </div>
             );
           })}
@@ -229,32 +227,32 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
       {/* Enhanced Hover Popup */}
       {hoveredDay && getDeparturesForDay(hoveredDay).length > 0 && (
         <div
-          className="fixed z-50 bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl border-2 border-blue-400 dark:border-blue-400 p-4 max-w-md animate-fade-in"
+          className="fixed z-50 bg-surface rounded-xl shadow-2xl border-2 border-info/30 p-4 max-w-md animate-fade-in"
           style={{ 
             left: Math.min(hoverPosition.x + 10, window.innerWidth - 400), 
             top: hoverPosition.y + 10 
           }}
         >
-          <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-700 dark:border-gray-700">
-            <div className="font-bold text-lg text-white dark:text-white flex items-center">
-              <FaCalendarAlt className="mr-2 text-blue-400 dark:text-blue-400" />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-border">
+            <div className="font-bold text-lg text-white flex items-center">
+              <LuCalendar aria-hidden="true" className="mr-2 text-info" />
               {monthNames[currentDate.getMonth()]} {hoveredDay}, {currentDate.getFullYear()}
             </div>
-            <div className="text-xs bg-blue-900/30 dark:bg-blue-900/30 text-blue-400 dark:text-blue-400 px-2 py-1 rounded-full font-semibold">
+            <div className="text-xs bg-info/10 text-info px-2 py-1 rounded-full font-semibold">
               {getDeparturesForDay(hoveredDay).length} Departure{getDeparturesForDay(hoveredDay).length !== 1 ? 's' : ''}
             </div>
           </div>
           
           <div className="space-y-3 max-h-80 overflow-y-auto">
             {getDeparturesForDay(hoveredDay).map((dep, idx) => (
-                <div className="bg-gray-700 dark:bg-gray-700 rounded-lg p-3 border border-gray-600 dark:border-gray-600 hover:shadow-md transition-shadow">
+                <div className="bg-surface-muted rounded-lg p-3 border border-border hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
-                    <div className="font-semibold text-white dark:text-white mb-1">
+                    <div className="font-semibold text-white mb-1">
                       {dep.packageId?.title || 'Package'}
                     </div>
-                    <div className="flex items-center text-xs text-gray-400 dark:text-gray-400">
-                      <FaMapMarkerAlt className="mr-1" />
+                    <div className="flex items-center text-xs text-text-muted">
+                      <LuMapPin aria-hidden="true" className="mr-1" />
                       {dep.packageId?.destinations?.[0]?.name || 'Destination'}
                     </div>
                   </div>
@@ -263,15 +261,15 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-600 dark:border-gray-600">
-                  <div className="flex items-center text-xs text-gray-300 dark:text-gray-300">
-                    <FaUsers className="mr-1 text-blue-400 dark:text-blue-400" />
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-2 pt-2 border-t border-border">
+                  <div className="flex items-center text-xs text-text">
+                    <LuUsers aria-hidden="true" className="mr-1 text-info" />
                     <span className="font-semibold">{dep.bookedSeats}/{dep.totalSeats}</span>
                     <span className="ml-1">seats</span>
                   </div>
-                  <div className="w-24 h-2 bg-gray-600 dark:bg-gray-600 rounded-full overflow-hidden">
+                  <div className="w-24 h-2 bg-surface-muted rounded-full overflow-hidden">
                     <div
-                      className={`h-full ${dep.bookedSeats > dep.totalSeats ? 'bg-red-500' : 'bg-green-500'}`}
+                      className={`h-full ${dep.bookedSeats > dep.totalSeats ? 'bg-danger' : 'bg-success'}`}
                       style={{ width: `${Math.min((dep.bookedSeats / dep.totalSeats) * 100, 100)}%` }}
                     ></div>
                   </div>
@@ -283,8 +281,8 @@ const GroupDeparturesCalendar = ({ onCreateDeparture }) => {
       )}
 
       {loading && (
-        <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center rounded-2xl">
-          <div className="text-primary font-semibold">Loading...</div>
+        <div className="absolute inset-0 bg-surface/50 flex items-center justify-center rounded-2xl">
+          <div className="text-brand font-semibold">Loading...</div>
         </div>
       )}
     </div>

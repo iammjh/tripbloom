@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { FaClipboardList, FaUpload, FaFileAlt, FaCheckCircle, FaTrash, FaEdit, FaPlus, FaCalendarAlt } from 'react-icons/fa';
+import { LuCalendar, LuCircleCheck, LuClipboardList, LuFileText, LuPencil, LuPlus, LuTrash2, LuUpload } from 'react-icons/lu';
+import { confirmAction } from '../utils/confirmStore.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { toEditorItinerary, toStoredItinerary } from './departureState';
+
 
 const ItinerariesManager = () => {
   const operatorId = localStorage.getItem('userId');
@@ -7,7 +10,11 @@ const ItinerariesManager = () => {
   const [selectedDeparture, setSelectedDeparture] = useState(null);
   const [itinerary, setItinerary] = useState({ days: [] });
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [editingDay, setEditingDay] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+  const [loadingItinerary, setLoadingItinerary] = useState(false);
+  const loadRequest = useRef(0);
 
   useEffect(() => {
     fetchDepartures();
@@ -29,24 +36,23 @@ const ItinerariesManager = () => {
     }
   };
 
-  const loadItinerary = (departure) => {
-    setSelectedDeparture(departure);
-    
-    // Mock itinerary - in real app, fetch from backend
-    const mockItinerary = {
-      departureId: departure._id,
-      days: [
-        {
-          dayNumber: 1,
-          date: new Date(departure.startDate),
-          activities: [
-            { time: '09:00', name: 'Departure', location: 'Hotel Lobby', notes: 'Be on time' },
-            { time: '13:00', name: 'Lunch', location: 'Restaurant', notes: 'Pre-booked' }
-          ]
-        }
-      ]
-    };
-    setItinerary(mockItinerary);
+  const loadItinerary = async departure => {
+    const requestId = ++loadRequest.current;
+    setSaveError(''); setSaveMessage(''); setUploadedFiles([]);
+    setSelectedDeparture(null);
+    setLoadingItinerary(true);
+    try {
+      const res = await fetch(`/api/admin/group-departures/${departure._id}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to load itinerary.');
+      if (requestId !== loadRequest.current) return;
+      setSelectedDeparture(data.departure);
+      setItinerary(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
+    } catch (error) {
+      if (requestId === loadRequest.current) setSaveError(error.message);
+    } finally {
+      if (requestId === loadRequest.current) setLoadingItinerary(false);
+    }
   };
 
   const addDay = () => {
@@ -93,22 +99,35 @@ const ItinerariesManager = () => {
   };
 
   const saveItinerary = async () => {
-    if (window.confirm('Save this itinerary?')) {
-      // In real app, send to backend
-      alert('Itinerary saved successfully!');
-    }
+    if (!selectedDeparture || saving || !(await confirmAction({ message: 'Save this itinerary?' }))) return;
+    setSaving(true); setSaveError(''); setSaveMessage('');
+    try {
+      const res = await fetch(`/api/admin/group-departures/${selectedDeparture._id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itinerary: toStoredItinerary(itinerary) })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to save itinerary.');
+      setSelectedDeparture(data.departure);
+      setDepartures(previous => previous.map(item => item._id === data.departure._id ? data.departure : item));
+      setItinerary(toEditorItinerary(data.departure.itinerary || [], data.departure.startDate));
+      setSaveMessage('Itinerary saved successfully.');
+    } catch (error) { setSaveError(error.message || 'Unable to save itinerary.'); }
+    finally { setSaving(false); }
   };
 
   return (
     <div className="space-y-6">
+      {saveError && <p role="alert" className="text-red-600">{saveError}</p>}
+      {saveMessage && <p role="status" className="text-green-600">{saveMessage}</p>}
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
-          <FaClipboardList className="mr-3 text-orange-600" />
+          <LuClipboardList aria-hidden="true" className="mr-3 text-orange-600" />
           Itineraries & Checklists
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Upload and manage trip plans, safety documents, and itineraries
+          Manage and save departure itineraries
         </p>
       </div>
 
@@ -124,6 +143,7 @@ const ItinerariesManager = () => {
                 <button
                   key={dep._id}
                   onClick={() => loadItinerary(dep)}
+                  disabled={saving}
                   className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
                     selectedDeparture?._id === dep._id
                       ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-500'
@@ -134,7 +154,7 @@ const ItinerariesManager = () => {
                     {dep.packageId?.title}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
-                    <FaCalendarAlt className="mr-2" />
+                    <LuCalendar aria-hidden="true" className="mr-2" />
                     {new Date(dep.startDate).toLocaleDateString()}
                   </div>
                 </button>
@@ -147,8 +167,8 @@ const ItinerariesManager = () => {
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
           {!selectedDeparture ? (
             <div className="text-center py-12">
-              <FaClipboardList className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-600 dark:text-gray-400">Select a departure to manage itinerary</p>
+              <LuClipboardList aria-hidden="true" className="text-6xl text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-600 dark:text-gray-400">{loadingItinerary ? 'Loading saved itinerary…' : 'Select a departure to manage itinerary'}</p>
             </div>
           ) : (
             <div>
@@ -161,15 +181,16 @@ const ItinerariesManager = () => {
                     onClick={addDay}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center"
                   >
-                    <FaPlus className="mr-2" />
+                    <LuPlus aria-hidden="true" className="mr-2" />
                     Add Day
                   </button>
                   <button 
                     onClick={saveItinerary}
+                    disabled={saving}
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold flex items-center"
                   >
-                    <FaCheckCircle className="mr-2" />
-                    Save
+                    <LuCircleCheck aria-hidden="true" className="mr-2" />
+                    {saving ? 'Saving…' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -234,7 +255,7 @@ const ItinerariesManager = () => {
                                 onClick={() => removeActivity(dayIdx, actIdx)}
                                 className="col-span-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
                               >
-                                <FaTrash />
+                                <LuTrash2 aria-hidden="true" />
                               </button>
                             </div>
                           </div>
@@ -260,16 +281,16 @@ const ItinerariesManager = () => {
               {/* File Uploads */}
               <div className="mt-6 pt-6 border-t-2 border-gray-200 dark:border-gray-600">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <FaFileAlt className="mr-2 text-orange-600" />
-                  Supporting Documents
+                  <LuFileText aria-hidden="true" className="mr-2 text-orange-600" />
+                  Supporting Documents (selected files)
                 </h3>
                 
                 <div className="mb-4">
                   <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                     <div className="text-center">
-                      <FaUpload className="text-3xl text-gray-400 mx-auto mb-2" />
+                      <LuUpload aria-hidden="true" className="text-3xl text-gray-400 mx-auto mb-2" />
                       <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Click to upload PDF, DOCX, or images
+                        Select PDF, DOCX, or images for this session
                       </p>
                     </div>
                     <input 
@@ -282,12 +303,13 @@ const ItinerariesManager = () => {
                   </label>
                 </div>
 
+                <p className="text-sm text-gray-500 mb-3">Selected files stay in this session and are not uploaded with the itinerary.</p>
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
                     {uploadedFiles.map(file => (
                       <div key={file.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
                         <div className="flex items-center">
-                          <FaFileAlt className="text-orange-600 mr-3" />
+                          <LuFileText aria-hidden="true" className="text-orange-600 mr-3" />
                           <div>
                             <p className="font-semibold text-gray-900 dark:text-white">{file.name}</p>
                             <p className="text-xs text-gray-500">
@@ -299,7 +321,7 @@ const ItinerariesManager = () => {
                           onClick={() => removeFile(file.id)}
                           className="text-red-600 hover:text-red-700"
                         >
-                          <FaTrash />
+                          <LuTrash2 aria-hidden="true" />
                         </button>
                       </div>
                     ))}

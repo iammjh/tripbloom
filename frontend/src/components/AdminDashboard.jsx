@@ -1,510 +1,463 @@
-import React, { useState, useEffect } from 'react';
-import ManageUsersMenu from './ManageUsersMenu';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { 
-  FaUsers, FaRoute, FaChartLine, FaCog, FaSignOutAlt, FaBell, FaSearch, 
-  FaCalendar, FaMapMarkerAlt, FaUserTie, FaDollarSign, FaShoppingCart,
-  FaExclamationTriangle, FaCheckCircle, FaClock, FaTimesCircle, FaFilter,
-  FaChartBar, FaArrowUp, FaArrowDown, FaChevronRight, FaStar
-} from 'react-icons/fa';
+import { LuArrowRight, LuBanknote, LuCalendarDays, LuClock, LuRefreshCw, LuTriangleAlert, LuUsers, LuWallet, LuCircleCheck } from 'react-icons/lu';
+import { chartValues } from '../utils/dashboardPresentation';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
 
-const AdminDashboard = () => {
+const PERIODS = [
+  { value: 'today', label: 'Today' },
+  { value: 'month', label: 'This month' },
+  { value: 'overall', label: 'Overall' },
+];
+
+const FUNNEL = [
+  { key: 'pending', label: 'Pending', tone: 'bg-warning' },
+  { key: 'confirmed', label: 'Confirmed', tone: 'bg-brand' },
+  { key: 'completed', label: 'Completed', tone: 'bg-success' },
+  { key: 'cancelled', label: 'Cancelled', tone: 'bg-danger' },
+  { key: 'refunded', label: 'Refunded', tone: 'bg-info' },
+];
+
+const money = value => `BDT ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const count = value => Number(value || 0).toLocaleString();
+const SEGMENT = 'min-h-[40px] rounded-full px-4 text-sm font-semibold transition-colors duration-150';
+
+// Headline figure card. The label always has room; `action` sits in the bottom row beside the footer note.
+function KpiCard({ icon: Icon, label, action, children, footer }) {
+  return (
+    <section className="glass flex flex-col gap-4 rounded-2xl p-5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-brand/10">
+          <Icon aria-hidden="true" className="h-5 w-5 text-brand" />
+        </span>
+        <h2 className="min-w-0 text-sm font-medium text-text-muted">{label}</h2>
+      </div>
+      <div>{children}</div>
+      {(footer || action) && (
+        <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+          {footer && <p className="min-w-0 flex-1 text-xs text-text-muted">{footer}</p>}
+          {action}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Net receipts per day as a line with a soft area, gridlines and hover values.
+function ReceiptsChart({ series }) {
+  const W = 800, H = 220, padL = 56, padR = 16, padT = 16, padB = 28;
+  const low = Math.min(0, ...series.map(day => day.net));
+  const high = Math.max(1, ...series.map(day => day.net));
+  const span = high - low || 1;
+  const x = index => padL + index * (W - padL - padR) / Math.max(1, series.length - 1);
+  const y = value => padT + (high - value) / span * (H - padT - padB);
+  const points = series.map((day, index) => `${x(index)},${y(day.net)}`).join(' ');
+  const area = `${x(0)},${y(low)} ${points} ${x(series.length - 1)},${y(low)}`;
+  const gridLevels = [high, (high + low) / 2, low];
+  const zeroInside = low < 0 && high > 0;
+
+  // On narrow screens the chart keeps a readable width and scrolls sideways instead of shrinking its labels.
+  return (
+    <div className="-mx-1 overflow-x-auto pb-1">
+      <div className="min-w-[560px]">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Daily net receipts in BDT" className="h-56 w-full overflow-visible">
+        {gridLevels.map((level, index) => (
+          <g key={index}>
+            <line x1={padL} x2={W - padR} y1={y(level)} y2={y(level)} className="stroke-border" strokeDasharray="4 6" />
+            <text x={padL - 8} y={y(level) + 4} textAnchor="end" className="fill-text-muted text-[11px]">
+              {Math.round(level).toLocaleString()}
+            </text>
+          </g>
+        ))}
+        {zeroInside && <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} className="stroke-text-muted" strokeWidth="1" />}
+        <polygon points={area} style={{ fill: 'rgb(var(--brand))', opacity: 0.12 }} />
+        <polyline fill="none" style={{ stroke: 'rgb(var(--brand))' }} strokeWidth="2.5" strokeLinejoin="round" points={points} />
+        {series.map((day, index) => (
+          <circle key={day.date} cx={x(index)} cy={y(day.net)} r="3.5" style={{ fill: 'rgb(var(--brand))' }}>
+            <title>{`${day.date}: ${money(day.net)} net · ${money(day.received)} received · ${money(day.refunded)} refunded`}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="mt-2 flex justify-between pl-14 text-xs text-text-muted">
+        <span>{series[0]?.date}</span>
+        <span>{series[Math.floor((series.length - 1) / 2)]?.date}</span>
+        <span>{series.at(-1)?.date}</span>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="dark text-text space-y-8" aria-busy="true" aria-label="Loading dashboard">
+      <Skeleton className="h-10 w-64 rounded-lg" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-36 w-full rounded-2xl" />)}
+      </div>
+      <Skeleton className="h-72 w-full rounded-2xl" />
+    </div>
+  );
+}
+
+export default function AdminDashboard() {
   const navigate = useNavigate();
+  const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [bookingsFilter, setBookingsFilter] = useState('all'); // 'all' or 'confirmed'
-  const [revenueFilter, setRevenueFilter] = useState('confirmed'); // 'confirmed' or 'all'
-  const [timeFilter, setTimeFilter] = useState('month'); // 'today', 'month', 'overall'
-  const [chartFilter, setChartFilter] = useState('all'); // 'all', 'personal', 'group'
-  
-  // Dashboard data
-  const [dashboardData, setDashboardData] = useState({
-    bookings: { today: 0, month: 0, overall: 0, confirmed: 0 },
-    revenue: { total: 0, confirmed: 0, pending: 0 },
-    upcomingDepartures: [],
-    cancellationRate: { withRefund: 0, withoutRefund: 0, total: 0 },
-    bookingFunnel: { pending: 0, confirmed: 0, completed: 0, cancelled: 0, stuck: 0 },
-    revenueOverTime: [],
-    topPackages: [],
-    alerts: []
-  });
+  const [error, setError] = useState('');
+  const [timeFilter, setTimeFilter] = useState('month');
+  const [bookingsFilter, setBookingsFilter] = useState('all');
+  const [revenueFilter, setRevenueFilter] = useState('received');
+  const [chartFilter, setChartFilter] = useState('all');
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const load = async () => {
     setLoading(true);
+    setError('');
     try {
-      // Fetch all necessary data in parallel
-      const [packagesRes, departuresRes] = await Promise.all([
-        axios.get('/api/admin/packages').catch(() => ({ data: { packages: [] } })),
-        axios.get('/api/admin/group-departures').catch(() => ({ data: { departures: [] } }))
-      ]);
-
-      const packages = packagesRes.data.packages || [];
-      const allDepartures = departuresRes.data.departures || [];
-
-      // Calculate upcoming departures (next 7 days)
-      const now = new Date();
-      const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const upcomingDepartures = allDepartures
-        .filter(dep => {
-          const startDate = new Date(dep.startDate);
-          return startDate >= now && startDate <= next7Days && dep.status !== 'CANCELLED';
-        })
-        .map(dep => ({
-          ...dep,
-          isLowOccupancy: (dep.bookedSeats / dep.totalSeats) < 0.3 // Less than 30%
-        }));
-
-      // Mock bookings data (replace with real API)
-      const mockBookings = {
-        today: 12,
-        month: 145,
-        overall: 2543,
-        confirmed: 2180
-      };
-
-      // Mock revenue data
-      const mockRevenue = {
-        total: 125450,
-        confirmed: 108230,
-        pending: 17220
-      };
-
-      // Mock cancellation rate
-      const totalCancelled = 156;
-      const withRefund = 98;
-      const mockCancellation = {
-        total: ((totalCancelled / mockBookings.overall) * 100).toFixed(1),
-        withRefund: ((withRefund / totalCancelled) * 100).toFixed(1),
-        withoutRefund: (((totalCancelled - withRefund) / totalCancelled) * 100).toFixed(1)
-      };
-
-      // Mock booking funnel
-      const mockFunnel = {
-        pending: 45,
-        confirmed: 203,
-        completed: 1987,
-        cancelled: 156,
-        stuck: 8 // Pending > 24 hours
-      };
-
-      // Mock revenue over time (last 30 days)
-      const mockRevenueOverTime = Array.from({ length: 30 }, (_, i) => ({
-        date: new Date(now.getTime() - (29 - i) * 24 * 60 * 60 * 1000),
-        personal: Math.floor(Math.random() * 3000 + 1000),
-        group: Math.floor(Math.random() * 5000 + 2000),
-        refunds: Math.floor(Math.random() * 500)
-      }));
-
-      // Calculate top performing packages
-      const topPackages = packages
-        .map(pkg => ({
-          ...pkg,
-          bookings: Math.floor(Math.random() * 100),
-          revenue: Math.floor(Math.random() * 50000),
-          rating: (Math.random() * 2 + 3).toFixed(1),
-          isLowRatingHighVolume: false
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5)
-        .map(pkg => ({
-          ...pkg,
-          isLowRatingHighVolume: parseFloat(pkg.rating) < 3.5 && pkg.bookings > 50
-        }));
-
-      // Generate alerts
-      const alerts = [];
-      
-      // Low occupancy departures
-      upcomingDepartures.forEach(dep => {
-        if (dep.isLowOccupancy) {
-          alerts.push({
-            id: `low-occ-${dep._id}`,
-            type: 'warning',
-            icon: FaExclamationTriangle,
-            message: `Group Departure "${dep.packageId?.title || 'Package'}" on ${new Date(dep.startDate).toLocaleDateString()} has only ${dep.bookedSeats}/${dep.totalSeats} seats booked.`,
-            action: () => navigate('/admin/departures'),
-            timestamp: new Date()
-          });
-        }
-      });
-
-      // Departures without operators (within 24 hours)
-      upcomingDepartures.forEach(dep => {
-        const hoursUntil = (new Date(dep.startDate) - now) / (1000 * 60 * 60);
-        if (hoursUntil < 24 && (!dep.operators || dep.operators.length === 0)) {
-          alerts.push({
-            id: `no-op-${dep._id}`,
-            type: 'danger',
-            icon: FaTimesCircle,
-            message: `Departure "${dep.packageId?.title || 'Package'}" starts in ${Math.floor(hoursUntil)} hours but has no operators assigned!`,
-            action: () => navigate('/admin/departures'),
-            timestamp: new Date()
-          });
-        }
-      });
-
-      // Cancelled departures needing refund action
-      const cancelledDepartures = allDepartures.filter(dep => 
-        dep.status === 'CANCELLED' && new Date(dep.startDate) > now
-      );
-      if (cancelledDepartures.length > 0) {
-        alerts.push({
-          id: 'refunds-needed',
-          type: 'warning',
-          icon: FaDollarSign,
-          message: `${cancelledDepartures.length} cancelled departure(s) may need refund processing.`,
-          action: () => navigate('/admin/departures'),
-          timestamp: new Date()
-        });
-      }
-
-      // Stuck pending bookings
-      if (mockFunnel.stuck > 0) {
-        alerts.push({
-          id: 'stuck-pending',
-          type: 'info',
-          icon: FaClock,
-          message: `${mockFunnel.stuck} booking(s) have been pending for more than 24 hours.`,
-          action: () => {},
-          timestamp: new Date()
-        });
-      }
-
-      setDashboardData({
-        bookings: mockBookings,
-        revenue: mockRevenue,
-        upcomingDepartures,
-        cancellationRate: mockCancellation,
-        bookingFunnel: mockFunnel,
-        revenueOverTime: mockRevenueOverTime,
-        topPackages,
-        alerts
-      });
-    } catch (err) {
-      console.error('Failed to fetch dashboard data:', err);
+      const response = await fetch('/api/admin/dashboard');
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.dashboard) throw new Error(data.message || 'Unable to load dashboard metrics.');
+      setDashboard(data.dashboard);
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const getBookingsValue = () => {
-    if (timeFilter === 'today') return dashboardData.bookings.today;
-    if (timeFilter === 'month') return dashboardData.bookings.month;
-    return dashboardData.bookings.overall;
-  };
+  useEffect(() => { load(); }, []);
 
-  const getBookingsLabel = () => {
-    const base = bookingsFilter === 'confirmed' ? 'Confirmed Bookings' : 'Total Bookings';
-    if (timeFilter === 'today') return `${base} (Today)`;
-    if (timeFilter === 'month') return `${base} (This Month)`;
-    return `${base} (Overall)`;
-  };
+  if (loading && !dashboard) return <DashboardSkeleton />;
+  if (!dashboard) {
+    return (
+      <div className="dark text-text">
+        <ErrorState title="The dashboard could not be loaded" message={error || 'Please try again in a moment.'} onRetry={load} />
+      </div>
+    );
+  }
 
-  const getAlertColor = (type) => {
-    const colors = {
-      danger: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300',
-      warning: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300',
-      info: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
-      success: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
-    };
-    return colors[type] || colors.info;
-  };
+  const period = dashboard.revenue.periods[timeFilter];
+  const bookingTotal = bookingsFilter === 'all' ? dashboard.bookings[timeFilter] : dashboard.bookings.confirmedByPeriod[timeFilter];
+  const revenueValue = revenueFilter === 'received' ? period.net : period.booked;
+  const series = chartValues(dashboard.revenueOverTime, chartFilter);
+  const chartNet = series.reduce((sum, day) => sum + day.net, 0);
+  const chartReceived = series.reduce((sum, day) => sum + day.received, 0);
+  const chartRefunded = series.reduce((sum, day) => sum + day.refunded, 0);
+  const chartEmpty = series.every(day => day.received === 0 && day.refunded === 0);
+  const funnelMax = Math.max(1, ...FUNNEL.map(row => dashboard.bookingFunnel[row.key] || 0));
+  const otherCurrencies = Object.entries(dashboard.revenue.byCurrency || {}).filter(([currency]) => currency !== 'BDT');
 
   return (
-    <>
-      
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Bookings Card */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    {getBookingsLabel()}
-                  </p>
-                  <FaShoppingCart className="text-blue-600 dark:text-blue-400 text-xl" />
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {bookingsFilter === 'confirmed' 
-                    ? dashboardData.bookings.confirmed.toLocaleString()
-                    : getBookingsValue().toLocaleString()}
-                </p>
-              </div>
-            </div>
-            <div className="flex space-x-2">
+    <div className="dark text-text space-y-8">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand">Overview</p>
+          <h1 className="mt-2 font-display text-3xl font-bold text-text">Dashboard</h1>
+          <p className="mt-2 text-sm text-text-muted">
+            Measured from recorded activity · periods in Asia/Dhaka time · updated {new Date(dashboard.generatedAt).toLocaleString()}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Dashboard period" className="glass inline-flex flex-wrap gap-1 rounded-full p-1">
+            {PERIODS.map(({ value, label }) => (
               <button
-                onClick={() => setTimeFilter('today')}
-                className={`px-2 py-1 text-xs rounded ${timeFilter === 'today' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}
+                key={value}
+                type="button"
+                aria-pressed={timeFilter === value}
+                onClick={() => setTimeFilter(value)}
+                className={`${SEGMENT} ${timeFilter === value ? 'bg-brand text-on-brand' : 'text-text-muted hover:text-text'}`}
               >
-                Today
+                {label}
               </button>
-              <button
-                onClick={() => setTimeFilter('month')}
-                className={`px-2 py-1 text-xs rounded ${timeFilter === 'month' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}
-              >
-                Month
-              </button>
-              <button
-                onClick={() => setTimeFilter('overall')}
-                className={`px-2 py-1 text-xs rounded ${timeFilter === 'overall' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}
-              >
-                Overall
-              </button>
-            </div>
-            <div className="mt-2">
-              <button
-                onClick={() => setBookingsFilter(bookingsFilter === 'all' ? 'confirmed' : 'all')}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center"
-              >
-                <FaFilter className="mr-1" />
-                {bookingsFilter === 'all' ? 'Show Confirmed Only' : 'Show All Statuses'}
-              </button>
-            </div>
+            ))}
           </div>
+          <Button variant="secondary" icon={LuRefreshCw} onClick={load} loading={loading}>
+            {loading ? 'Refreshing' : 'Refresh'}
+          </Button>
+        </div>
+      </header>
 
-          {/* Revenue Card */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Revenue {revenueFilter === 'confirmed' ? '(Confirmed)' : '(All)'}
-                  </p>
-                  <FaDollarSign className="text-green-600 dark:text-green-400 text-xl" />
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  ${(revenueFilter === 'confirmed' 
-                    ? dashboardData.revenue.confirmed 
-                    : dashboardData.revenue.total).toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Pending: ${dashboardData.revenue.pending.toLocaleString()}
-                </p>
-              </div>
-            </div>
+      {error && (
+        <p role="alert" className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
+          <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-warning" />
+          {error} Showing the last loaded figures.
+        </p>
+      )}
+
+      <section aria-label="Key figures" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          icon={LuWallet}
+          label={revenueFilter === 'received' ? 'Net receipts' : 'Booked value'}
+          action={(
             <button
-              onClick={() => setRevenueFilter(revenueFilter === 'all' ? 'confirmed' : 'all')}
-              className="text-xs text-green-600 dark:text-green-400 hover:underline flex items-center mt-2"
+              type="button"
+              onClick={() => setRevenueFilter(value => value === 'received' ? 'booked' : 'received')}
+              className="flex-none text-xs font-semibold text-brand underline-offset-4 hover:underline"
             >
-              <FaFilter className="mr-1" />
-              {revenueFilter === 'all' ? 'Show Confirmed Only' : 'Include Pending'}
+              {revenueFilter === 'received' ? 'Show booked value' : 'Show net receipts'}
             </button>
+          )}
+          footer={`Gross ${money(period.gross)} · refunds ${money(period.refunded)}`}
+        >
+          <p data-testid="receipt-total" className="font-display text-3xl font-bold text-text">{money(revenueValue)}</p>
+        </KpiCard>
+
+        <KpiCard
+          icon={LuCalendarDays}
+          label="Bookings"
+          action={(
+            <button
+              type="button"
+              aria-pressed={bookingsFilter === 'confirmed'}
+              onClick={() => setBookingsFilter(value => value === 'confirmed' ? 'all' : 'confirmed')}
+              className={`flex-none rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-colors ${
+                bookingsFilter === 'confirmed' ? 'bg-brand text-on-brand ring-brand' : 'text-text-muted ring-border hover:text-text'
+              }`}
+            >
+              Confirmed only
+            </button>
+          )}
+          footer={bookingsFilter === 'confirmed' ? 'Confirmed or completed bookings' : 'All bookings created in this period'}
+        >
+          <p data-testid="booking-count" className="font-display text-3xl font-bold text-text">{count(bookingTotal)}</p>
+        </KpiCard>
+
+        <KpiCard icon={LuClock} label="Outstanding balance" footer="Active bookings created in this period">
+          <p className="font-display text-3xl font-bold text-text">{money(period.outstanding)}</p>
+        </KpiCard>
+
+        <KpiCard
+          icon={LuUsers}
+          label="Customers"
+          footer={`${count(dashboard.totalOperators)} tour operators · ${count(dashboard.pendingContacts)} unanswered contact messages`}
+        >
+          <p className="font-display text-3xl font-bold text-text">{count(dashboard.totalUsers)}</p>
+          <p className="mt-1 text-sm text-text-muted">{count(dashboard.activeUsers)} active</p>
+        </KpiCard>
+      </section>
+
+      {otherCurrencies.length > 0 && (
+        <p className="text-sm text-text-muted">
+          {otherCurrencies.map(([currency, values]) => (
+            <span key={currency} className="mr-4">{currency} net receipts: {Number(values.net).toLocaleString()} (excluded from BDT totals)</span>
+          ))}
+        </p>
+      )}
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <section aria-labelledby="chart-heading" className="glass rounded-2xl p-5 xl:col-span-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 id="chart-heading" className="font-display text-lg font-semibold text-text">Net receipts · last 30 days</h2>
+              <p className="mt-1 text-sm text-text-muted">Received payments minus completed refunds, by day (Dhaka time).</p>
+            </div>
+            <select
+              aria-label="Chart booking type"
+              value={chartFilter}
+              onChange={e => setChartFilter(e.target.value)}
+              className="min-h-[40px] rounded-lg border border-border bg-surface px-3 text-sm text-text"
+            >
+              <option value="all">All tours</option>
+              <option value="personal">Personal / custom</option>
+              <option value="group">Group</option>
+            </select>
           </div>
 
-          {/* Upcoming Departures Card */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Upcoming Departures
-                  </p>
-                  <FaCalendar className="text-purple-600 dark:text-purple-400 text-xl" />
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {dashboardData.upcomingDepartures.length}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Next 7 days</p>
-              </div>
-            </div>
-            {dashboardData.upcomingDepartures.filter(d => d.isLowOccupancy).length > 0 && (
-              <div className="flex items-center text-xs text-orange-600 dark:text-orange-400 mt-2">
-                <FaExclamationTriangle className="mr-1" />
-                {dashboardData.upcomingDepartures.filter(d => d.isLowOccupancy).length} below min. occupancy
-              </div>
+          <div className="mt-6">
+            {chartEmpty ? (
+              <p className="flex h-56 items-center justify-center text-sm text-text-muted">No received payments or completed refunds in this period.</p>
+            ) : (
+              <ReceiptsChart series={series} />
             )}
           </div>
 
-          {/* Cancellation Rate Card */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Cancellation Rate
-                  </p>
-                  <FaTimesCircle className="text-red-600 dark:text-red-400 text-xl" />
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {dashboardData.cancellationRate.total}%
-                </p>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 space-y-1">
-                  <div className="flex justify-between">
-                    <span>With refund:</span>
-                    <span className="font-semibold">{dashboardData.cancellationRate.withRefund}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Without refund:</span>
-                    <span className="font-semibold">{dashboardData.cancellationRate.withoutRefund}%</span>
-                  </div>
-                </div>
-              </div>
+          <dl className="mt-5 grid grid-cols-3 gap-4 border-t border-border pt-4 text-sm">
+            <div>
+              <dt className="text-text-muted">Net</dt>
+              <dd className="mt-1 font-semibold text-text">{money(chartNet)}</dd>
             </div>
-          </div>
-        </div>
+            <div>
+              <dt className="text-text-muted">Received</dt>
+              <dd className="mt-1 font-semibold text-text">{money(chartReceived)}</dd>
+            </div>
+            <div>
+              <dt className="text-text-muted">Refunded</dt>
+              <dd className="mt-1 font-semibold text-text">{money(chartRefunded)}</dd>
+            </div>
+          </dl>
+        </section>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Booking Status Funnel */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Booking Status Funnel</h2>
-            <div className="space-y-3">
-              {[
-                { label: 'Pending', value: dashboardData.bookingFunnel.pending, color: 'yellow', width: 100 },
-                { label: 'Confirmed', value: dashboardData.bookingFunnel.confirmed, color: 'green', width: 85 },
-                { label: 'Completed', value: dashboardData.bookingFunnel.completed, color: 'blue', width: 70 },
-                { label: 'Cancelled', value: dashboardData.bookingFunnel.cancelled, color: 'red', width: 55 }
-              ].map((item, index) => (
-                <div key={index} className="cursor-pointer hover:opacity-80 transition-opacity" onClick={() => {}}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{item.label}</span>
-                    <span className="text-sm font-bold text-gray-900 dark:text-white">{item.value}</span>
+        <section aria-labelledby="funnel-heading" className="glass rounded-2xl p-5">
+          <h2 id="funnel-heading" className="font-display text-lg font-semibold text-text">Booking status</h2>
+          <ul className="mt-5 space-y-4">
+            {FUNNEL.map(({ key, label, tone }) => {
+              const value = dashboard.bookingFunnel[key] || 0;
+              return (
+                <li key={key}>
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <span className="text-text">{label}</span>
+                    <span className="font-semibold text-text">{count(value)}</span>
                   </div>
-                  <div className="relative h-8 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
-                    <div 
-                      className={`absolute h-full bg-gradient-to-r from-${item.color}-400 to-${item.color}-600 flex items-center justify-end pr-3 text-white font-semibold text-xs transition-all duration-500`}
-                      style={{ width: `${item.width}%` }}
-                    >
-                      <FaChevronRight />
-                    </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-muted" role="presentation">
+                    <div className={`h-full rounded-full ${tone}`} style={{ width: `${(value / funnelMax) * 100}%` }} />
                   </div>
-                </div>
-              ))}
-            </div>
-            {dashboardData.bookingFunnel.stuck > 0 && (
-              <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                <div className="flex items-center text-sm text-yellow-800 dark:text-yellow-300">
-                  <FaClock className="mr-2" />
-                  <span>{dashboardData.bookingFunnel.stuck} pending bookings stuck &gt; 24 hours</span>
-                </div>
-              </div>
-            )}
-          </div>
+                </li>
+              );
+            })}
+          </ul>
 
-          {/* Revenue Over Time */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Revenue Over Time</h2>
-              <select
-                value={chartFilter}
-                onChange={(e) => setChartFilter(e.target.value)}
-                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="all">All Tours</option>
-                <option value="personal">Personal Only</option>
-                <option value="group">Group Only</option>
-              </select>
+          <div className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 gap-3">
+              <span className="text-text-muted">Pending over 24 hours</span>
+              {dashboard.bookingFunnel.stuck > 0
+                ? <Badge tone="warning">{count(dashboard.bookingFunnel.stuck)} need attention</Badge>
+                : <span className="font-semibold text-text">{count(dashboard.bookingFunnel.stuck)}</span>}
             </div>
-            <div className="h-64 flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-900/10 dark:to-blue-900/10 rounded-xl">
-              <div className="text-center text-gray-600 dark:text-gray-400">
-                <FaChartLine className="text-4xl mx-auto mb-2 text-primary" />
-                <p className="text-sm">Line Chart: Last 30 Days</p>
-                <p className="text-xs mt-1">Gross Revenue vs Net (after refunds)</p>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 gap-3">
+              <span className="text-text-muted">Cancellation rate</span>
+              <span className="font-semibold text-text">{dashboard.cancellationRate.total}% · {count(dashboard.cancellationRate.count)} bookings</span>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-              <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <div className="text-xs text-green-600 dark:text-green-400">Gross</div>
-                <div className="text-sm font-bold text-green-900 dark:text-green-300">$125K</div>
-              </div>
-              <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                <div className="text-xs text-red-600 dark:text-red-400">Refunds</div>
-                <div className="text-sm font-bold text-red-900 dark:text-red-300">$8.5K</div>
-              </div>
-              <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="text-xs text-blue-600 dark:text-blue-400">Net</div>
-                <div className="text-sm font-bold text-blue-900 dark:text-blue-300">$116.5K</div>
-              </div>
-            </div>
+            <p className="text-xs text-text-muted">
+              Of cancelled bookings, {dashboard.cancellationRate.withRefund}% have a recorded refund and {dashboard.cancellationRate.withoutRefund}% do not.
+            </p>
           </div>
-        </div>
+        </section>
+      </div>
 
-        {/* Bottom Row: Top Packages & Alerts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Top Performing Packages */}
-          <div className="lg:col-span-2 bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Top Performing Packages</h2>
-            <div className="space-y-3">
-              {dashboardData.topPackages.map((pkg, index) => (
-                <div key={pkg._id} className="flex items-center space-x-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:shadow-md transition-shadow">
-                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-primary to-green-600 rounded-full flex items-center justify-center text-white font-bold">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {pkg.title}
-                      </h3>
-                      {pkg.isLowRatingHighVolume && (
-                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400 text-xs rounded-full flex items-center">
-                          <FaExclamationTriangle className="mr-1" /> Quality Check
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-4 mt-1 text-xs text-gray-600 dark:text-gray-400">
-                      <span className="flex items-center">
-                        <FaShoppingCart className="mr-1" /> {pkg.bookings} bookings
-                      </span>
-                      <span className="flex items-center">
-                        <FaStar className="mr-1 text-yellow-500" /> {pkg.rating}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-gray-900 dark:text-white">
-                      ${(pkg.revenue / 1000).toFixed(1)}K
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">revenue</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section aria-labelledby="departures-heading" className="glass rounded-2xl p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 gap-3">
+            <h2 id="departures-heading" className="font-display text-lg font-semibold text-text">Upcoming departures</h2>
+            <span className="text-xs text-text-muted">Next 7 days</span>
           </div>
-
-          {/* Alerts Panel */}
-          <div className="bg-gray-800 dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Alerts</h2>
-              <span className="px-2 py-1 bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400 text-xs font-semibold rounded-full">
-                {dashboardData.alerts.length}
-              </span>
-            </div>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {dashboardData.alerts.length > 0 ? (
-                dashboardData.alerts.map((alert) => {
-                  const AlertIcon = alert.icon;
-                  return (
-                    <div
-                      key={alert.id}
-                      onClick={alert.action}
-                      className={`p-3 border rounded-lg cursor-pointer hover:shadow-md transition-shadow ${getAlertColor(alert.type)}`}
-                    >
-                      <div className="flex items-start">
-                        <AlertIcon className="mt-0.5 mr-2 flex-shrink-0" />
-                        <div className="flex-1 text-sm">
-                          {alert.message}
+          {dashboard.upcomingDepartures.length === 0 ? (
+            <EmptyState icon={LuCalendarDays} title="No departures this week" description="Group departures starting in the next 7 days appear here." className="mt-4" />
+          ) : (
+            <ul className="mt-4 divide-y divide-border">
+              {dashboard.upcomingDepartures.map(departure => {
+                const fill = departure.totalSeats ? Math.min(100, (departure.bookedSeats / departure.totalSeats) * 100) : 0;
+                return (
+                  <li key={departure._id}>
+                    <button type="button" onClick={() => navigate('/admin/departures')} className="flex w-full items-center gap-4 py-4 text-left transition-colors hover:bg-surface-muted/60">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-text">{departure.packageId?.title || 'Departure'}</p>
+                        <p className="mt-1 text-sm text-text-muted">
+                          {new Date(departure.startDate).toLocaleDateString()} · {count(departure.operators?.length || 0)} operators
+                        </p>
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-muted" role="presentation">
+                          <div className="h-full rounded-full bg-brand" style={{ width: `${fill}%` }} />
                         </div>
+                        <p className="mt-1 text-xs text-text-muted">{departure.bookedSeats}/{departure.totalSeats} seats booked</p>
                       </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <FaCheckCircle className="text-4xl mx-auto mb-2 text-green-500" />
-                  <p className="text-sm">No alerts at the moment</p>
-                </div>
-              )}
-            </div>
+                      {departure.isLowOccupancy && <Badge tone="warning">Low occupancy</Badge>}
+                      <LuArrowRight aria-hidden="true" className="h-4 w-4 flex-none text-text-muted" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section aria-labelledby="alerts-heading" className="glass rounded-2xl p-5">
+          <h2 id="alerts-heading" className="font-display text-lg font-semibold text-text">Needs attention</h2>
+          {dashboard.alerts.length === 0 ? (
+            <p className="mt-4 flex items-center gap-2 text-sm text-text-muted">
+              <LuCircleCheck aria-hidden="true" className="h-4 w-4 text-success" /> Nothing needs attention in the current records.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-2">
+              {dashboard.alerts.map(alert => (
+                <li key={alert.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(alert.path)}
+                    className="flex w-full items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left text-sm text-text transition-colors hover:bg-warning/10"
+                  >
+                    <LuTriangleAlert aria-hidden="true" className="h-4 w-4 flex-none text-warning" />
+                    <span className="flex-1">{alert.message}</span>
+                    <LuArrowRight aria-hidden="true" className="h-4 w-4 flex-none text-text-muted" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section aria-labelledby="packages-heading" className="glass rounded-2xl p-5">
+        <h2 id="packages-heading" className="font-display text-lg font-semibold text-text">Top performing packages</h2>
+        {dashboard.topPackages.length === 0 ? (
+          <EmptyState title="No packages yet" description="Package performance appears here once tours have bookings." className="mt-4" />
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-text-muted">
+                <tr className="border-b border-border">
+                  <th scope="col" className="py-3 pr-4 font-semibold">Package</th>
+                  <th scope="col" className="py-3 pr-4 text-right font-semibold">Bookings</th>
+                  <th scope="col" className="py-3 pr-4 text-right font-semibold">Net receipts (BDT)</th>
+                  <th scope="col" className="py-3 text-right font-semibold">Approved rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.topPackages.map(pkg => (
+                  <tr key={pkg._id} className="border-b border-border last:border-0 hover:bg-surface-muted/50">
+                    <td className="py-3 pr-4">
+                      <span className="font-medium text-text">{pkg.title}</span>
+                      {pkg.isLowRatingHighVolume && <span className="ml-2 align-middle"><Badge tone="warning">Review quality</Badge></span>}
+                    </td>
+                    <td className="py-3 pr-4 text-right text-text">{count(pkg.bookings)}</td>
+                    <td className="py-3 pr-4 text-right text-text">{Number(pkg.revenue || 0).toLocaleString()}</td>
+                    <td className="py-3 text-right text-text">{pkg.rating === null ? <span className="text-text-muted">No reviews</span> : `${pkg.rating}/5 (${pkg.reviewCount})`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        )}
+      </section>
 
-        {/* Quick Actions - Now in Sidebar */}
-    </>
+      {dashboard.recentBookings && dashboard.recentBookings.length > 0 && (
+        <section aria-labelledby="recent-heading" className="glass rounded-2xl p-5">
+          <div className="flex items-center gap-3">
+            <LuBanknote aria-hidden="true" className="h-5 w-5 text-brand" />
+            <h2 id="recent-heading" className="font-display text-lg font-semibold text-text">Recent bookings</h2>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-text-muted">
+                <tr className="border-b border-border">
+                  <th scope="col" className="py-3 pr-4 font-semibold">Booked</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Customer</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Package</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Status</th>
+                  <th scope="col" className="py-3 text-right font-semibold">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.recentBookings.map(booking => (
+                  <tr key={booking._id} className="border-b border-border last:border-0">
+                    <td className="py-3 pr-4 text-text-muted">{new Date(booking.createdAt).toLocaleDateString()}</td>
+                    <td className="py-3 pr-4 text-text">{booking.customerId?.fullName || 'Unknown customer'}</td>
+                    <td className="py-3 pr-4 text-text">{booking.packageId?.title || 'Package'}</td>
+                    <td className="py-3 pr-4"><Badge value={booking.status || 'PENDING'} /></td>
+                    <td className="py-3 text-right font-semibold text-text">{booking.currency || 'BDT'} {Number(booking.finalAmount ?? booking.totalAmount ?? 0).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <p className="text-xs leading-relaxed text-text-muted">
+        New receipts require administrator verification. Historical SUCCESS records keep their original status; this dashboard does not independently verify bank settlement.
+      </p>
+    </div>
   );
-};
-
-export default AdminDashboard;
+}

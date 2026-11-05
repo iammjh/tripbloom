@@ -1,6 +1,12 @@
+import { LuCalendar, LuHeart, LuHistory, LuLogOut, LuMap, LuMessagesSquare, LuPlane, LuStar, LuUser } from 'react-icons/lu';
+import { PiGlobeHemisphereWestDuotone, PiMapTrifoldDuotone, PiStarDuotone } from 'react-icons/pi';
+import { BackIcon } from './ui/icons.js';
+import { userMessage } from '../utils/errorMessage.js';
+import { notify } from '../utils/notifyStore.js';
+import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlane, FaHeart, FaHistory, FaUser, FaSignOutAlt, FaMapMarkedAlt, FaCalendarAlt, FaStar, FaBell, FaCheckCircle, FaTimesCircle, FaClock, FaDollarSign, FaComments } from 'react-icons/fa';
+
 import Bookings from './Bookings';
 import { useAuth } from '../context/AuthContext';
 import CustomerPackageModal from './CustomerPackageModal';
@@ -11,6 +17,15 @@ import NotificationCenter from './NotificationCenter';
 import AnnouncementBanner from './AnnouncementBanner';
 import AdminChat from './AdminChat';
 import ReviewModal from './ReviewModal';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import IconButton from './ui/IconButton.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import { CustomerTabs } from './customer/CustomerPageFrame.jsx';
+import TourDetailModal from './TourDetailModal';
+import { bookingLabel } from '../utils/bookingCode.js';
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
@@ -43,10 +58,8 @@ const CustomerDashboard = () => {
   });
 
   const checkPaymentStatus = (booking) => {
-    const totalPaid = (booking.payments || []).filter(p => 
-      p.status === 'SUCCESS' || p.status === 'COMPLETED' || p.status === 'CONFIRMED'
-    ).reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalAmount = booking.totalAmount || booking.amount || 0;
+    const totalPaid = paymentTotals(booking).gross;
+    const totalAmount = booking.finalAmount ?? booking.totalAmount ?? booking.amount ?? 0;
     const isPaid = totalPaid >= totalAmount;
     const startDate = booking.startDate ? new Date(booking.startDate) : null;
     const now = new Date();
@@ -258,18 +271,19 @@ const CustomerDashboard = () => {
         const idRaw = updated._id || updated.id;
         if (!idRaw) return;
         const idStr = (idRaw && typeof idRaw.toString === 'function') ? idRaw.toString() : idRaw;
-        // remove from upcomingTrips if present (compare as strings)
-        setUpcomingTrips(prev => prev.filter(t => {
-          const tid = t.id || t._id || (t.booking && (t.booking._id || t.booking.id));
-          const tidStr = (tid && typeof tid.toString === 'function') ? tid.toString() : tid;
-          return tidStr !== idStr;
+        const terminal = ['CANCELLED', 'REFUNDED', 'COMPLETED'].includes(updated.status);
+        setUpcomingTrips(previous => previous.flatMap(trip => {
+          if (String(trip.id || trip._id) !== idStr) return [trip];
+          if (terminal) return [];
+          return [{ ...trip, status: updated.status || trip.status, booking: { ...trip.booking, ...updated,
+            packageId: typeof updated.packageId === 'string' ? trip.booking.packageId : updated.packageId } }];
         }));
         // update todayTrip if it matches
         setTodayTrip(prev => {
           if (!prev) return prev;
           const prevId = prev.id || prev._id || (prev.booking && (prev.booking._id || prev.booking.id));
           const prevIdStr = (prevId && typeof prevId.toString === 'function') ? prevId.toString() : prevId;
-          if (prevIdStr === idStr) return ({ ...prev, booking: { ...prev.booking, ...updated }, status: updated.status || 'COMPLETED', isOngoing: false });
+          if (prevIdStr === idStr) return ({ ...prev, booking: { ...prev.booking, ...updated }, status: updated.status || prev.status, isOngoing: terminal ? false : prev.isOngoing });
           return prev;
         });
       } catch (err) { /* ignore */ }
@@ -305,7 +319,9 @@ const CustomerDashboard = () => {
     fetchRewardPoints();
   }, [user]);
 
-  const [savedTours, setSavedTours] = useState([]);
+  // null while loading; the saved packages once fetched.
+  const [savedTours, setSavedTours] = useState(null);
+  const [savedDetail, setSavedDetail] = useState(null);
   const [todayTrip, setTodayTrip] = useState(null);
   const [checkedInBookings, setCheckedInBookings] = useState({});
 
@@ -313,14 +329,13 @@ const CustomerDashboard = () => {
     const loadSaved = async () => {
       try {
         const userId = localStorage.getItem('userId');
-        if (!userId) return;
+        if (!userId) { setSavedTours([]); return; }
         const res = await fetch(`/api/users/${userId}/saved`);
         const data = await res.json();
-        if (data && data.packages) {
-          setSavedTours(data.packages.map(p => ({ name: p.title, price: `$${p.basePrice}`, rating: (p.rating || 4.5) })));
-        }
+        setSavedTours(Array.isArray(data?.packages) ? data.packages : []);
       } catch (err) {
         console.error('Failed to load saved tours', err);
+        setSavedTours([]);
       }
     };
     loadSaved();
@@ -356,7 +371,7 @@ const CustomerDashboard = () => {
         } catch (err) {
           setUpcomingTrips(prev => prev.map(t => t.id === bookingId ? ({ ...t, booking: { ...t.booking, checkedIn: true }, isOngoing: t.isOngoing }) : t));
         }
-        alert('You are checked in for today\'s tour.');
+        notify.message('You are checked in for today\'s tour.');
         return;
       }
       // fallback: try to patch booking (if backend supports)
@@ -382,14 +397,14 @@ const CustomerDashboard = () => {
         } catch (err) {
           setUpcomingTrips(prev => prev.map(t => t.id === bookingId ? ({ ...t, booking: { ...t.booking, checkedIn: true }, isOngoing: t.isOngoing }) : t));
         }
-        alert('You are checked in for today\'s tour.');
+        notify.message('You are checked in for today\'s tour.');
         return;
       }
       const txt = await res.text();
-      alert('Check-in failed: ' + txt);
+      notify.error(userMessage(txt, 'Check-in failed. Please try again.'));
     } catch (err) {
       console.error('Check-in error', err);
-      alert('Check-in failed, please try again later.');
+      notify.message('Check-in failed, please try again later.');
     }
   };
 
@@ -399,7 +414,7 @@ const CustomerDashboard = () => {
       const res = await fetch(`/api/bookings/${bookingId}/complete`, { method: 'POST' });
       if (!res.ok) {
         const txt = await res.text();
-        alert('Failed to end tour: ' + txt);
+        notify.error(userMessage(txt, 'The tour could not be marked as completed. Please try again.'));
         return;
       }
       const data = await res.json();
@@ -409,328 +424,234 @@ const CustomerDashboard = () => {
       setTodayTrip(prev => (prev && prev.id === bookingId) ? ({ ...prev, booking: { ...prev.booking, ...updated }, status: updated.status || 'COMPLETED', isOngoing: false }) : prev);
       // notify other components (e.g., Bookings) to refresh/move the booking
       try { window.dispatchEvent(new CustomEvent('bookingUpdated', { detail: updated })); } catch (e) { /* ignore */ }
-      alert('Tour marked as completed. You can now write a review.');
+      notify.message('Tour marked as completed. You can now write a review.');
       // open review modal for the completed booking
       setReviewTargetBooking(updated);
       setReviewModalOpen(true);
     } catch (err) {
       console.error('End tour error', err);
-      alert('Failed to end tour, please try again later.');
+      notify.message('Failed to end tour, please try again later.');
     }
   };
 
   const todayChecked = todayTrip ? ((todayTrip.booking && (todayTrip.booking.checkedIn || todayTrip.booking.checkedInByUser)) || checkedInBookings[todayTrip.id]) : false;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      {/* Hero Header */}
-      <div className="bg-gradient-to-r from-primary via-green-500 to-emerald-500 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate('/')}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all"
-              >
-                Home
-              </button>
-              <div>
-                <h1 className="text-3xl font-bold mb-2">Welcome back, {firstName}! ✈️</h1>
-                <p className="text-green-100">Your next adventure awaits</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <NotificationCenter
-                userId={(user && user.id) || localStorage.getItem('userId')}
-                userRole="CUSTOMER"
-                onOpenChat={(booking, operator) => {
-                  setChatBooking(booking);
-                  setChatOperator(operator);
-                  setChatModalOpen(true);
-                }}
-              />
-              <button 
-                onClick={() => {
-                  logout();
-                  navigate('/');
-                }}
-                className="flex items-center space-x-2 px-6 py-3 bg-white/20 backdrop-blur-md rounded-xl hover:bg-white/30 transition-all"
-              >
-                <FaSignOutAlt />
-                <span>Logout</span>
-              </button>
-            </div>
+  // Opens the package behind a booking, falling back to the trip itself.
+  const openTripPackage = (trip) => {
+    const pkg = trip.booking?.packageId || trip.booking?.package || trip;
+    setPackageModalData(pkg);
+    setPackageModalTab('overview');
+    setPackageModalOpen(true);
+  };
+
+  const openOperatorChat = (trip) => {
+    if (!trip.booking?.assignedOperator) {
+      notify.message('No operator assigned to this tour yet. Please contact support.');
+      return;
+    }
+    setChatBooking(trip.booking);
+    setChatOperator(trip.booking.assignedOperator);
+    setChatModalOpen(true);
+  };
+
+  // Shows the tour on a map. Uses the package's own location, else a known destination; otherwise the destinations tab.
+  const openTripMap = (trip) => {
+    const pkg = trip.booking?.packageId || trip.booking?.package || trip;
+    let coords = null;
+    if (pkg.mapLocation && pkg.mapLocation.lat && pkg.mapLocation.lng) {
+      coords = { lat: pkg.mapLocation.lat, lng: pkg.mapLocation.lng, zoom: pkg.mapLocation.zoom || 12 };
+    } else {
+      const destinationCoords = {
+        'sajek valley': { lat: 23.3817, lng: 92.2938, zoom: 13 },
+        'bandarban': { lat: 22.1953, lng: 92.2184, zoom: 12 },
+        'cox\'s bazar': { lat: 21.4272, lng: 92.0058, zoom: 12 },
+        'coxs bazar': { lat: 21.4272, lng: 92.0058, zoom: 12 },
+        'rangamati': { lat: 22.6533, lng: 92.1753, zoom: 12 },
+        'sylhet': { lat: 24.8949, lng: 91.8687, zoom: 12 },
+        'sundarbans': { lat: 21.9497, lng: 89.1833, zoom: 11 },
+        'kuakata': { lat: 21.8167, lng: 90.1167, zoom: 13 },
+        'srimangal': { lat: 24.3065, lng: 91.7296, zoom: 13 },
+        'saint martin': { lat: 20.6274, lng: 92.3233, zoom: 14 },
+        'dhaka': { lat: 23.8103, lng: 90.4125, zoom: 11 }
+      };
+      if (pkg.destinations && Array.isArray(pkg.destinations)) {
+        const mainDest = pkg.destinations.find((d, idx) => idx > 0 && d.name) || pkg.destinations[0];
+        if (mainDest && mainDest.name) {
+          const destName = mainDest.name.toLowerCase();
+          const cityName = mainDest.city?.toLowerCase();
+          coords = destinationCoords[destName] || destinationCoords[cityName];
+          if (!coords) {
+            for (const [key, value] of Object.entries(destinationCoords)) {
+              if (destName.includes(key) || key.includes(destName) ||
+                  (cityName && (cityName.includes(key) || key.includes(cityName)))) {
+                coords = value;
+                break;
+              }
+            }
+          }
+          if (coords) coords = { ...coords, label: mainDest.name };
+        }
+      }
+    }
+    if (coords) {
+      setMapCoords(coords);
+      setMapTitle(pkg.title || trip.destination || 'Location');
+      setMapOpen(true);
+      return;
+    }
+    setPackageModalData(pkg);
+    setPackageModalTab('destinations');
+    setPackageModalOpen(true);
+  };
+
+  // One upcoming trip card: photo, status, and the actions that apply to its state.
+  const renderTrip = (trip, index) => {
+    const pkgId = trip.booking?.packageId?._id || trip.booking?.packageId || (trip.booking?.package?._id || trip.booking?.package);
+    const reviewed = Boolean(pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString()));
+    const hasOperator = Boolean(trip.booking?.assignedOperator);
+    return (
+      <article key={trip.id || index} data-booking-id={trip.id} className="glass flex flex-col overflow-hidden rounded-2xl">
+        <div className="relative h-44 overflow-hidden bg-surface-muted">
+          <TripPhoto src={trip.image} alt={trip.destination} />
+          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+          <div className="absolute bottom-3 left-4 right-4 text-white">
+            <p className="text-xs font-semibold tracking-wide text-white/80">{bookingLabel(trip.booking)}</p>
+              <h3 className="font-display text-xl font-bold">{trip.destination}</h3>
+            <p className="mt-1 flex items-center gap-2 text-sm text-white/85">
+              <LuCalendar aria-hidden="true" className="h-4 w-4 flex-none" />
+              {trip.dateLabel}
+            </p>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        {/* Announcements Banner */}
-        <div className="mb-6">
-          <AnnouncementBanner userRole="CUSTOMERS" />
-        </div>
-
-        {/* Floating support chat button/panel (only AdminChat, no extra Support wrapper) */}
-        <div>
-          <div aria-hidden className="fixed bottom-6 right-6 z-40">
-            <button
-              onClick={() => setShowSupportChat(s => !s)}
-              className="w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
-              title="Support"
-            >
-              <FaComments size={20} />
-            </button>
+        <div className="flex flex-1 flex-col gap-4 p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge value={trip.status} />
+            {trip.isOngoing && <Badge tone="brand">Ongoing</Badge>}
           </div>
 
-          {showSupportChat && (
-            <div className="fixed bottom-24 right-6 w-96 max-w-full z-50">
-              <div className="relative">
-                  <div className="p-0">
-                    <AdminChat currentUserId={(user && user.id) || localStorage.getItem('userId')} />
-                  </div>
-                </div>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex space-x-4 mb-8 overflow-x-auto pb-2">
-          {[
-            { icon: FaPlane, label: 'My Trips', active: true, path: '/customer' },
-            { icon: FaStar, label: 'My Reviews', active: false, path: '/customer/reviews' },
-            { icon: FaHistory, label: 'History', active: false, path: '/customer/history' },
-            { icon: FaUser, label: 'Profile', active: false, path: '/customer/profile' },
-          ].map((tab, index) => (
-            <button
-              key={index}
-              onClick={() => tab.path && navigate(tab.path)}
-              className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-semibold whitespace-nowrap transition-all ${
-                tab.active
-                  ? 'bg-primary text-white shadow-lg'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:shadow-md'
-              }`}
-            >
-              <tab.icon />
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Upcoming Trips */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-            <FaCalendarAlt className="mr-3 text-primary" />
-            Upcoming Trips
-          </h2>
-          {todayTrip && (
-            <div className="mb-4 p-4 rounded-lg bg-white dark:bg-gray-800 border-l-4 border-green-500 flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold text-green-600">Today's Tour</div>
-                <div className="font-bold text-lg text-gray-900 dark:text-white">{todayTrip.destination} — {todayTrip.dateLabel}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Operator: {todayTrip.booking?.assignedOperator?.name || 'TBD'}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => { if (!todayChecked) handleCheckIn(todayTrip); else alert('You are already checked in.'); }}
-                  className={`px-5 py-2 rounded-lg font-semibold ${todayChecked ? 'bg-gray-300 text-gray-700 cursor-default' : 'bg-green-600 text-white hover:bg-green-700'}`}
-                  disabled={todayChecked}
-                >
-                  {todayChecked ? 'Checked in' : 'Check in'}
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {loadingTrips ? (
-              <p>Loading upcoming trips…</p>
-            ) : tripsError ? (
-              <p className="text-red-600">{tripsError}</p>
-            ) : upcomingTrips.length === 0 ? (
-              <p className="text-gray-600">You have no upcoming trips.</p>
-            ) : (
-              upcomingTrips.map((trip, index) => (
-                <div
-                  key={trip.id || index}
-                  className="group relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden hover:shadow-2xl transition-all transform hover:-translate-y-1"
-                >
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={trip.image || `https://source.unsplash.com/featured/?${encodeURIComponent(trip.destination || 'travel')}`}
-                      alt={trip.destination}
-                      onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://source.unsplash.com/featured/?${encodeURIComponent(trip.destination || 'travel')}`; }}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                    <div className="absolute bottom-4 left-4 text-white">
-                      <h3 className="text-2xl font-bold">{trip.destination}</h3>
-                      <p className="text-green-200 flex items-center mt-1">
-                        <FaCalendarAlt className="mr-2" />
-                        {trip.dateLabel}
-                      </p>
-                    </div>
-                    <div className="absolute top-4 right-4 text-right space-y-1">
-                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
-                        (trip.status && trip.status.toString().toUpperCase() === 'CONFIRMED') ? 'bg-green-500 text-white' : 'bg-yellow-400 text-gray-900'
-                      }`}>
-                        {trip.status}
-                      </span>
-                      {trip.isOngoing && (
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-700 text-white">
-                          Ongoing
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex space-x-3">
-                      <button
-                        onClick={() => {
-                          // open package detail modal (prefer populated packageId)
-                          const pkg = trip.booking?.packageId || trip.booking?.package || trip;
-                          setPackageModalData(pkg);
-                          setPackageModalTab('overview');
-                          setPackageModalOpen(true);
-                        }}
-                        className="flex-1 bg-primary text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                      >
-                        View Details
-                      </button>
-                      <button
-                        onClick={() => {
-                          console.log('Chat button clicked, booking:', trip.booking);
-                          console.log('Assigned operator:', trip.booking?.assignedOperator);
-                          if (!trip.booking?.assignedOperator) {
-                            alert('No operator assigned to this tour yet. Please contact support.');
-                            return;
-                          }
-                          setChatBooking(trip.booking);
-                          setChatOperator(trip.booking.assignedOperator);
-                          setChatModalOpen(true);
-                        }}
-                        className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                          trip.booking?.assignedOperator 
-                            ? 'bg-blue-500 hover:bg-blue-600 text-white' 
-                            : 'bg-gray-300 hover:bg-gray-400 text-gray-600 cursor-not-allowed'
-                        }`}
-                        title={trip.booking?.assignedOperator ? 'Chat with Tour Operator' : 'No operator assigned yet'}
-                      >
-                        <FaComments />
-                      </button>
-                      {((trip.booking?.status === 'CONFIRMED' || trip.booking?.status === 'CHECKED_IN') && trip.isOngoing) && (
-                        <button
-                          onClick={() => handleEndTour(trip)}
-                          className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-                        >
-                          End Tour
-                        </button>
-                      )}
-                      {trip.booking?.status === 'COMPLETED' && (() => {
-                        const pkgId = trip.booking.packageId?._id || trip.booking.packageId || (trip.booking.package?._id || trip.booking.package);
-                        const already = pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString());
-                        if (already) {
-                          return (
-                            <button
-                              onClick={() => navigate('/customer/reviews')}
-                              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition-colors"
-                            >
-                              View Review
-                            </button>
-                          );
-                        }
-
-                        return (
-                          <button
-                            onClick={() => { setReviewTargetBooking(trip.booking); setReviewModalOpen(true); }}
-                            className="px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
-                          >
-                            Write Review
-                          </button>
-                        );
-                      })()}
-                      <button
-                        onClick={() => {
-                          // attempt to open a map view focused on package coordinates
-                          const pkg = trip.booking?.packageId || trip.booking?.package || trip;
-                          console.log('[Map Button] Package data:', pkg);
-                          
-                          // First, try to use mapLocation from package if available
-                          let coords = null;
-                          if (pkg.mapLocation && pkg.mapLocation.lat && pkg.mapLocation.lng) {
-                            coords = {
-                              lat: pkg.mapLocation.lat,
-                              lng: pkg.mapLocation.lng,
-                              zoom: pkg.mapLocation.zoom || 12
-                            };
-                            console.log('[Map Button] Using package mapLocation:', coords);
-                          } else {
-                            // Fallback: try to find coordinates from destinations array
-                            console.log('[Map Button] No mapLocation, checking destinations:', pkg.destinations);
-                            
-                            const destinationCoords = {
-                              'sajek valley': { lat: 23.3817, lng: 92.2938, zoom: 13 },
-                              'bandarban': { lat: 22.1953, lng: 92.2184, zoom: 12 },
-                              'cox\'s bazar': { lat: 21.4272, lng: 92.0058, zoom: 12 },
-                              'coxs bazar': { lat: 21.4272, lng: 92.0058, zoom: 12 },
-                              'rangamati': { lat: 22.6533, lng: 92.1753, zoom: 12 },
-                              'sylhet': { lat: 24.8949, lng: 91.8687, zoom: 12 },
-                              'sundarbans': { lat: 21.9497, lng: 89.1833, zoom: 11 },
-                              'kuakata': { lat: 21.8167, lng: 90.1167, zoom: 13 },
-                              'srimangal': { lat: 24.3065, lng: 91.7296, zoom: 13 },
-                              'saint martin': { lat: 20.6274, lng: 92.3233, zoom: 14 },
-                              'dhaka': { lat: 23.8103, lng: 90.4125, zoom: 11 }
-                            };
-                            
-                            if (pkg.destinations && Array.isArray(pkg.destinations)) {
-                              const mainDest = pkg.destinations.find((d, idx) => idx > 0 && d.name) || pkg.destinations[0];
-                              if (mainDest && mainDest.name) {
-                                const destName = mainDest.name.toLowerCase();
-                                const cityName = mainDest.city?.toLowerCase();
-                                
-                                coords = destinationCoords[destName] || destinationCoords[cityName];
-                                
-                                if (!coords) {
-                                  for (const [key, value] of Object.entries(destinationCoords)) {
-                                    if (destName.includes(key) || key.includes(destName) || 
-                                        (cityName && (cityName.includes(key) || key.includes(cityName)))) {
-                                      coords = value;
-                                      break;
-                                    }
-                                  }
-                                }
-                                
-                                if (coords) {
-                                  coords.label = mainDest.name;
-                                }
-                              }
-                            }
-                          }
-                          
-                          console.log('[Map Button] Final coords:', coords);
-                          if (coords) {
-                            setMapCoords(coords);
-                            setMapTitle(pkg.title || trip.destination || 'Location');
-                            setMapOpen(true);
-                            return;
-                          }
-
-                          console.log('[Map Button] No coords found, opening package modal');
-                          // fallback: open the package modal on destinations tab
-                          setPackageModalData(pkg);
-                          setPackageModalTab('destinations');
-                          setPackageModalOpen(true);
-                        }}
-                        className="px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <FaMapMarkedAlt className="text-primary" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
+          <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            <Button size="sm" onClick={() => openTripPackage(trip)}>View Details</Button>
+            <IconButton
+              label={hasOperator ? 'Chat with tour operator' : 'No operator assigned yet'}
+              icon={LuMessagesSquare}
+              onClick={() => openOperatorChat(trip)}
+            />
+            {(trip.booking?.status === 'CONFIRMED' || trip.booking?.status === 'CHECKED_IN') && trip.isOngoing && (
+              <Button size="sm" variant="secondary" onClick={() => handleEndTour(trip)}>End tour</Button>
             )}
+            {trip.booking?.status === 'COMPLETED' && (reviewed ? (
+              <Button size="sm" variant="secondary" onClick={() => navigate('/customer/reviews')}>View review</Button>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={() => { setReviewTargetBooking(trip.booking); setReviewModalOpen(true); }}>Write review</Button>
+            ))}
+            <IconButton label="Show on map" icon={LuMap} className="border border-border" onClick={() => openTripMap(trip)} />
           </div>
         </div>
+      </article>
+    );
+  };
+
+  const stats_cards = [
+    { label: 'Total trips', value: stats.totalTrips, Icon: PiMapTrifoldDuotone },
+    { label: 'Countries visited', value: stats.countriesVisited, Icon: PiGlobeHemisphereWestDuotone },
+    { label: 'Reward points', value: Number(stats.rewardPoints || 0).toLocaleString(), Icon: PiStarDuotone },
+  ];
+
+  return (
+    <div className="dark mesh-bg min-h-screen text-text">
+      <div className="mx-auto max-w-7xl space-y-10 px-4 py-8 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <Button variant="ghost" size="sm" icon={BackIcon} onClick={() => navigate('/')} className="-ml-3 mb-2">Back to home</Button>
+            <p className="text-sm font-semibold uppercase tracking-wider text-brand">Your account</p>
+            <h1 className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">Welcome back, {firstName}</h1>
+            <p className="mt-2 text-base text-text-muted">Your next adventure awaits.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <NotificationCenter
+              userId={(user && user.id) || localStorage.getItem('userId')}
+              userRole="CUSTOMER"
+              onOpenChat={(booking, operator) => {
+                setChatBooking(booking);
+                setChatOperator(operator);
+                setChatModalOpen(true);
+              }}
+            />
+            <Button variant="secondary" icon={LuLogOut} onClick={() => { logout(); navigate('/'); }}>Log out</Button>
+          </div>
+        </header>
+
+        <AnnouncementBanner userRole="CUSTOMERS" />
+
+        <section aria-label="Travel summary" className="grid gap-4 sm:grid-cols-3">
+          {stats_cards.map(({ label, value, Icon }) => (
+            <div key={label} className="glass flex items-center gap-4 rounded-2xl p-5">
+              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-brand/10">
+                <Icon aria-hidden="true" className="h-7 w-7 text-brand" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm text-text-muted">{label}</p>
+                <p className="font-display text-3xl font-bold text-text">{value}</p>
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <CustomerTabs active="trips" />
+
+        {todayTrip && (
+          <section aria-labelledby="today-heading" className="glass rounded-2xl p-5 ring-1 ring-brand/40 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold uppercase tracking-wider text-brand">Today's tour</p>
+                <h2 id="today-heading" className="mt-1 font-display text-2xl font-bold text-text">{todayTrip.destination}</h2>
+                <p className="mt-1 text-sm text-text-muted">
+                  {todayTrip.dateLabel} · Operator: {todayTrip.booking?.assignedOperator?.name || 'TBD'}
+                </p>
+              </div>
+              <Button size="lg" variant={todayChecked ? 'secondary' : 'primary'} disabled={todayChecked} onClick={() => handleCheckIn(todayTrip)}>
+                {todayChecked ? 'Checked in' : 'Check in'}
+              </Button>
+            </div>
+          </section>
+        )}
+
+        <section aria-labelledby="upcoming-heading" className="space-y-5">
+          <h2 id="upcoming-heading" className="flex items-center gap-2 font-display text-2xl font-bold text-text">
+            <LuCalendar aria-hidden="true" className="h-6 w-6 text-brand" />
+            Upcoming trips
+          </h2>
+          {loadingTrips && (
+            <div className="grid gap-6 md:grid-cols-2" aria-hidden="true">
+              {[0, 1].map((i) => (
+                <div key={i} className="glass overflow-hidden rounded-2xl">
+                  <Skeleton className="h-44 w-full rounded-none" />
+                  <div className="space-y-3 p-5"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-4 w-1/2" /></div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!loadingTrips && tripsError && (
+            <ErrorState
+              title="Your trips could not be loaded"
+              message="Please refresh the page. If it keeps happening, contact support."
+              onRetry={() => window.location.reload()}
+            />
+          )}
+          {!loadingTrips && !tripsError && upcomingTrips.length === 0 && (
+            <EmptyState
+              title="No upcoming trips"
+              description="Book a tour and it will appear here."
+              action={<Button onClick={() => navigate('/browse-packages')}>Browse tours</Button>}
+            />
+          )}
+          {!loadingTrips && !tripsError && upcomingTrips.length > 0 && (
+            <div className="grid gap-6 md:grid-cols-2">
+              {upcomingTrips.map(renderTrip)}
+            </div>
+          )}
+        </section>
 
         {packageModalOpen && packageModalData && (
           <CustomerPackageModal
@@ -742,7 +663,10 @@ const CustomerDashboard = () => {
         )}
 
         {bookingModalOpen && bookingModalData && (
-          <BookingDetailModal booking={bookingModalData} onClose={() => setBookingModalOpen(false)} onUpdate={(u) => {}} />
+          <BookingDetailModal booking={bookingModalData} onClose={() => setBookingModalOpen(false)} onUpdate={updated => {
+            setBookingModalData(previous => ({ ...previous, ...updated, packageId: typeof updated.packageId === 'string' ? previous.packageId : updated.packageId }));
+            window.dispatchEvent(new CustomEvent('bookingUpdated', { detail: updated }));
+          }} />
         )}
 
         {mapOpen && (
@@ -794,58 +718,91 @@ const CustomerDashboard = () => {
           />
         )}
 
-        {/* Bookings (from backend) */}
-        <Bookings />
+        <section aria-label="Bookings">
+          <Bookings />
+        </section>
 
-        {/* Saved Tours */}
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-            <FaHeart className="mr-3 text-red-500" />
-            Saved Tours
+        <section aria-labelledby="saved-heading" className="space-y-5">
+          <h2 id="saved-heading" className="flex items-center gap-2 font-display text-2xl font-bold text-text">
+            <LuHeart aria-hidden="true" className="h-6 w-6 text-danger" />
+            Saved tours
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {savedTours.map((tour, index) => (
-              <div
-                key={index}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all border border-gray-200 dark:border-gray-700"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{tour.name}</h3>
-                  <button className="text-red-500 hover:scale-110 transition-transform">
-                    <FaHeart size={20} />
-                  </button>
-                </div>
-                <div className="flex items-center text-yellow-500 mb-3">
-                  <FaStar />
-                  <span className="ml-2 text-gray-700 dark:text-gray-300 font-semibold">{tour.rating}</span>
-                </div>
-                <p className="text-2xl font-bold text-primary mb-4">{tour.price}</p>
-                <button className="w-full bg-gradient-to-r from-primary to-green-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:scale-105 transition-all">
-                  Book Now
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+          {savedTours === null && (
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-40 w-full rounded-2xl" />)}
+            </div>
+          )}
+          {savedTours !== null && savedTours.length === 0 && (
+            <EmptyState
+              title="No saved tours yet"
+              description="Save a tour from the browse page to find it here later."
+              action={<Button variant="secondary" onClick={() => navigate('/browse-packages')}>Browse tours</Button>}
+            />
+          )}
+          {savedTours !== null && savedTours.length > 0 && (
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {savedTours.map((tour) => (
+                <article key={tour._id} className="glass flex flex-col gap-3 rounded-2xl p-5">
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-text">{tour.title}</h3>
+                    <p className="mt-1 text-sm text-text-muted">{tour.defaultDays} Days / {tour.defaultNights} Nights</p>
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-4">
+                    <p className="font-display text-xl font-bold text-brand">BDT {Number(tour.basePrice || 0).toLocaleString()}</p>
+                    <Button size="sm" onClick={() => setSavedDetail(tour)}>View Details</Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
-        {/* Quick Stats */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-6 shadow-lg">
-            <p className="text-blue-100 mb-2">Total Trips</p>
-            <p className="text-4xl font-bold">{stats.totalTrips}</p>
-          </div>
-          <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl p-6 shadow-lg">
-            <p className="text-green-100 mb-2">Countries Visited</p>
-            <p className="text-4xl font-bold">{stats.countriesVisited}</p>
-          </div>
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl p-6 shadow-lg">
-            <p className="text-purple-100 mb-2">Rewards Points</p>
-            <p className="text-4xl font-bold">{stats.rewardPoints.toLocaleString()}</p>
-          </div>
-        </div>
+        {savedDetail && (
+          <TourDetailModal
+            isOpen={Boolean(savedDetail)}
+            onClose={() => setSavedDetail(null)}
+            packageData={savedDetail}
+            userRole="CUSTOMER"
+          />
+        )}
       </div>
+
+      {/* Support chat */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          type="button"
+          onClick={() => setShowSupportChat((open) => !open)}
+          aria-label="Open support chat"
+          title="Support"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-brand text-on-brand shadow-lg transition-transform hover:scale-105"
+        >
+          <LuMessagesSquare aria-hidden="true" size={20} />
+        </button>
+      </div>
+      {showSupportChat && (
+        <div className="glass fixed bottom-24 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl">
+          <AdminChat currentUserId={(user && user.id) || localStorage.getItem('userId')} />
+        </div>
+      )}
     </div>
   );
 };
 
 export default CustomerDashboard;
+
+// Photo for a trip card. Shows a branded field when there is no photo or the photo fails to load.
+function TripPhoto({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-brand-strong via-surface to-info/40" />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="absolute inset-0 h-full w-full object-cover"
+    />
+  );
+}

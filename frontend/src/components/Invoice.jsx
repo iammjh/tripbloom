@@ -1,6 +1,9 @@
+import { LuDownload, LuPrinter, LuX } from 'react-icons/lu';
+import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { FaTimes, FaPrint, FaDownload } from 'react-icons/fa';
+import { bookingLabel } from '../utils/bookingCode.js';
+
 
 const Invoice = ({ isOpen, onClose, booking }) => {
   const invoiceRef = useRef(null);
@@ -28,10 +31,7 @@ const Invoice = ({ isOpen, onClose, booking }) => {
   };
 
   const packageInfo = booking.packageId || {};
-  const totalPaid = (booking.payments || [])
-    .filter(p => p.status === 'SUCCESS' || p.status === 'COMPLETED' || p.status === 'CONFIRMED')
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
-  const balance = (booking.totalAmount || 0) - totalPaid;
+  const { gross: totalPaid, remaining: balance } = paymentTotals(booking);
 
   // Debug: Log the booking object to see its structure
   console.log('[Invoice] Booking data:', booking);
@@ -88,19 +88,20 @@ const Invoice = ({ isOpen, onClose, booking }) => {
               onClick={handlePrint}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
-              <FaPrint /> Print
+              <LuPrinter aria-hidden="true" /> Print
             </button>
             <button 
               onClick={handleDownload}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
             >
-              <FaDownload /> Download
+              <LuDownload aria-hidden="true" /> Download
             </button>
             <button 
+              aria-label="Close" 
               onClick={onClose}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
             >
-              <FaTimes />
+              <LuX aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -120,7 +121,7 @@ const Invoice = ({ isOpen, onClose, booking }) => {
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Invoice #:</span>
-                  <span className="font-semibold">{(booking._id || booking.id || '').slice(-8).toUpperCase()}</span>
+                  <span className="font-semibold">{bookingLabel(booking)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Booking Date:</span>
@@ -254,6 +255,8 @@ const Invoice = ({ isOpen, onClose, booking }) => {
                   <span className="font-semibold">Subtotal:</span>
                   <span className="font-semibold">{formatCurrency(booking.totalAmount)}</span>
                 </div>
+                {booking.discountAmount > 0 && <div className="flex justify-between py-2 border-b"><span>Discount:</span><span>{formatCurrency(booking.discountAmount)}</span></div>}
+                <div className="flex justify-between py-2 border-b"><span>Final amount:</span><span>{formatCurrency(booking.finalAmount ?? booking.totalAmount)}</span></div>
                 <div className="flex justify-between py-2 border-b text-green-600">
                   <span className="font-semibold">Total Paid:</span>
                   <span className="font-semibold">{formatCurrency(totalPaid)}</span>

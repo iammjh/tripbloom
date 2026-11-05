@@ -1,7 +1,8 @@
+import { LuCalendar, LuTriangleAlert, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import axios from 'axios';
-import { FaTimes, FaCalendarAlt, FaUsers, FaUserTie, FaExclamationTriangle } from 'react-icons/fa';
+
 
 const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
   const [groupPackages, setGroupPackages] = useState([]);
@@ -198,7 +199,7 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
   if (!isOpen) return null;
 
   const modalContent = (
-    <div className="fixed inset-0 overflow-y-auto" style={{ zIndex: 99999 }}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto sm:items-start sm:p-6" style={{ zIndex: 99999 }}>
       <div className="flex min-h-screen items-center justify-center p-4">
         {/* Backdrop */}
         <div 
@@ -207,39 +208,40 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
         ></div>
         
         {/* Modal Content */}
-        <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-scale-in" style={{ zIndex: 99999 }}>
+        <div className="relative flex max-h-[92vh] w-full flex-col overflow-y-auto rounded-t-2xl bg-surface shadow-2xl animate-scale-in sm:rounded-2xl max-w-3xl" style={{ zIndex: 99999 }}>
           {/* Close Button */}
           <button
+            aria-label="Close"
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
+            className="absolute top-4 right-4 text-text-muted hover:text-text-muted transition-colors z-10"
           >
-            <FaTimes size={24} />
+            <LuX aria-hidden="true" size={24} />
           </button>
 
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
+          <div className="bg-gradient-to-r from-info to-info p-6 text-white">
             <h2 className="text-2xl font-bold">Create New Group Departure</h2>
-            <p className="text-blue-100 mt-1">Set up a new departure for a group tour package</p>
+            <p className="text-on-brand/80 mt-1">Set up a new departure for a group tour package</p>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 max-h-[70vh] overflow-y-auto">
             {error && (
-              <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start">
-                <FaExclamationTriangle className="text-red-600 dark:text-red-400 mt-1 mr-3 flex-shrink-0" />
-                <div className="text-red-800 dark:text-red-300">{error}</div>
+              <div className="mb-4 p-4 bg-danger/10 border border-danger/30 rounded-lg flex items-start">
+                <LuTriangleAlert aria-hidden="true" className="text-danger mt-1 mr-3 flex-shrink-0" />
+                <div className="text-danger">{error}</div>
               </div>
             )}
 
             {/* Select Package */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-semibold text-text mb-2">
                 Tour Package *
               </label>
               <select
                 value={formData.packageId}
                 onChange={(e) => handlePackageChange(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-text focus:ring-2 focus:ring-brand"
                 required
               >
                 <option value="">-- Select a GROUP tour package --</option>
@@ -250,7 +252,7 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
                 ))}
               </select>
               {groupPackages.length === 0 && (
-                <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-2">
+                <p className="text-sm text-warning mt-2">
                   No GROUP packages found. Create a GROUP tour package first.
                 </p>
               )}
@@ -259,26 +261,26 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
             {/* Dates */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-text mb-2">
                   Start Date *
                 </label>
                 <input
                   type="date"
                   value={formData.startDate}
                   onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-text"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-text mb-2">
                   End Date *
                 </label>
                 <input
                   type="date"
                   value={formData.endDate}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-text"
                   required
                 />
               </div>
@@ -287,7 +289,7 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
             {/* Capacity and Price */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-text mb-2">
                   Total Seats *
                 </label>
                 <input
@@ -295,13 +297,13 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
                   min="1"
                   value={formData.totalSeats}
                   onChange={(e) => setFormData({ ...formData, totalSeats: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-text"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Price Per Person ($) *
+                <label className="block text-sm font-semibold text-text mb-2">
+                  Price Per Person (BDT) *
                 </label>
                 <input
                   type="number"
@@ -309,7 +311,7 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
                   step="0.01"
                   value={formData.pricePerPerson}
                   onChange={(e) => setFormData({ ...formData, pricePerPerson: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-text"
                   required
                 />
               </div>
@@ -317,36 +319,36 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
 
             {/* Assign Operators */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-semibold text-text mb-2">
                 Assign Operators * (Select at least one)
               </label>
-              <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-3 bg-gray-50 dark:bg-gray-700/50">
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3 bg-surface-muted">
                 {operators.length > 0 ? (
                   operators.map(op => (
                     <label
                       key={op._id}
-                      className={`flex items-center p-3 bg-white dark:bg-gray-700 rounded-lg transition-colors ${operatorStatus[op._id]?.unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer'}`}
+                      className={`flex items-center p-3 bg-surface rounded-lg transition-colors ${operatorStatus[op._id]?.unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-surface-muted cursor-pointer'}`}
                     >
                       <input
                         type="checkbox"
                         checked={formData.selectedOperators.includes(op._id)}
                         onChange={() => operatorStatus[op._id]?.unavailable ? null : handleOperatorToggle(op._id)}
                         disabled={operatorStatus[op._id]?.unavailable}
-                        className="mr-3 w-5 h-5 text-blue-600"
+                        className="mr-3 w-5 h-5 text-info"
                       />
                       <div className="flex items-center flex-1">
-                        <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+                        <div className="w-10 h-10 bg-brand text-white rounded-full flex items-center justify-center font-bold mr-3">
                           {op.fullName?.charAt(0) || 'O'}
                         </div>
                         <div>
-                          <div className="font-semibold text-gray-900 dark:text-white">
+                          <div className="font-semibold text-text">
                             {op.fullName || 'Unknown'}
                           </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                          <div className="text-sm text-text-muted">
                             {op.email}
                           </div>
                           {operatorStatus[op._id]?.unavailable && (
-                            <div className="text-xs text-red-500 mt-1">
+                            <div className="text-xs text-danger mt-1">
                               {operatorStatus[op._id].reasons[0] || 'Unavailable for selected dates'}
                             </div>
                           )}
@@ -355,31 +357,31 @@ const CreateDepartureModal = ({ isOpen, onClose, onDepartureCreated }) => {
                     </label>
                   ))
                 ) : (
-                  <p className="text-gray-600 dark:text-gray-400 text-center py-4">
+                  <p className="text-text-muted text-center py-4">
                     No operators available. Add tour operators first.
                   </p>
                 )}
               </div>
               {formData.selectedOperators.length > 0 && (
-                <p className="text-sm text-green-600 dark:text-green-400 mt-2">
+                <p className="text-sm text-success mt-2">
                   {formData.selectedOperators.length} operator(s) selected
                 </p>
               )}
             </div>
 
             {/* Action Buttons */}
-            <div className="flex space-x-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap gap-3 pt-4 border-t border-border">
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-semibold"
+                className="flex-1 px-6 py-3 bg-brand text-white rounded-lg hover:opacity-90 disabled:bg-border transition-colors font-semibold"
               >
                 {loading ? 'Creating...' : 'Create Departure'}
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-3 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
+                className="px-6 py-3 bg-surface-muted text-text rounded-lg hover:bg-border transition-colors font-semibold"
               >
                 Cancel
               </button>

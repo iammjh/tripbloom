@@ -27,7 +27,15 @@ const activityLogSchema = new mongoose.Schema({
       'REFUND_PROCESSED',
       'SETTINGS_UPDATED',
       'ANNOUNCEMENT_CREATED',
-      'CONTACT_RESOLVED'
+      'CONTACT_RESOLVED',
+      'ANNOUNCEMENT_UPDATED',
+      'ANNOUNCEMENT_DELETED',
+      'PAYMENT_VERIFIED',
+      'PAYMENT_REJECTED',
+      'DATE_CHANGE_APPROVED',
+      'DATE_CHANGE_REJECTED',
+      'KYC_APPROVED',
+      'KYC_REJECTED'
     ]
   },
   targetType: {

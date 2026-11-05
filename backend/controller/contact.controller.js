@@ -1,4 +1,5 @@
 import { ContactMessage } from '../model/contact.model.js';
+import { logActivity } from '../service/activityLog.service.js';
 
 export async function createContactController(req, res) {
   try {
@@ -42,6 +43,14 @@ export async function markContactHandledController(req, res) {
     if (!item) return res.status(404).json({ success: false, message: 'Not found' });
     item.handled = true;
     await item.save();
+    await logActivity({
+      adminId: req.user?.id,
+      action: 'CONTACT_RESOLVED',
+      targetType: 'Contact',
+      targetId: item._id,
+      description: `Marked the message from ${item.name} as handled`,
+      ipAddress: req.ip,
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to mark handled', err);

@@ -1,6 +1,9 @@
+import { LuFacebook, LuLock, LuMail, LuUser, LuX } from 'react-icons/lu';
+import { FaGoogle } from 'react-icons/fa';
+import { PhoneIcon } from './ui/icons.js';
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { FaTimes, FaGoogle, FaFacebook, FaEnvelope, FaLock, FaUser } from 'react-icons/fa';
+
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../api/client';
@@ -131,10 +134,11 @@ const AuthModal = ({ isOpen, onClose }) => {
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in" style={{ zIndex: 99999 }}>
           {/* Close Button */}
           <button
+            aria-label="Close"
             onClick={onClose}
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
           >
-            <FaTimes size={24} />
+            <LuX aria-hidden="true" size={24} />
           </button>
 
           {/* Header with Gradient */}
@@ -154,7 +158,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               {!isLogin && (
                 <div className="animate-fade-in-up">
                   <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2">
-                    <FaUser className="inline mr-2" />
+                    <LuUser aria-hidden="true" className="inline mr-2" />
                     Full Name
                   </label>
                   <input
@@ -173,7 +177,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               {!isLogin && (
                 <div className="animate-fade-in-up">
                   <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2">
-                    📞 Phone Number
+                    <PhoneIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> Phone Number
                   </label>
                   <input
                     type="tel"
@@ -194,7 +198,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               {/* Email Field */}
               <div>
                 <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2">
-                  <FaEnvelope className="inline mr-2" />
+                  <LuMail aria-hidden="true" className="inline mr-2" />
                   Email Address
                 </label>
                 <input
@@ -211,7 +215,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               {/* Password Field */}
               <div>
                 <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2">
-                  <FaLock className="inline mr-2" />
+                  <LuLock aria-hidden="true" className="inline mr-2" />
                   Password
                 </label>
                 <input
@@ -229,7 +233,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               {!isLogin && (
                 <div className="animate-fade-in-up">
                   <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2">
-                    <FaLock className="inline mr-2" />
+                    <LuLock aria-hidden="true" className="inline mr-2" />
                     Confirm Password
                   </label>
                   <input
@@ -289,7 +293,7 @@ const AuthModal = ({ isOpen, onClose }) => {
                 <span className="font-semibold text-gray-700 dark:text-gray-300">Google</span>
               </button>
               <button className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all transform hover:scale-105">
-                <FaFacebook className="text-blue-600" size={20} />
+                <LuFacebook aria-hidden="true" className="text-blue-600" size={20} />
                 <span className="font-semibold text-gray-700 dark:text-gray-300">Facebook</span>
               </button>
             </div>

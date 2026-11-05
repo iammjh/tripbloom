@@ -1,3 +1,4 @@
+import { listPendingPayments, verifyManualPayment } from '../service/manualPayment.service.js';
 // booking.controller.js
 import {
   createBooking,
@@ -16,6 +17,25 @@ import {
 } from '../service/booking.service.js';
 import { autoCompletePassedBookings } from '../service/booking.service.js';
 import { checkInBooking } from '../service/booking.service.js';
+import { updateOperatorNotes } from '../service/booking.service.js';
+import { GroupDeparture } from '../model/groupDeparture.model.js';
+
+const rolesFor = user => (user?.roles || []).map(role => role.toLowerCase());
+const isOperatorRole = roles => roles.includes('operator') || roles.includes('tour_operator');
+
+async function isBookingOperator(booking, userId) {
+  const departureId = booking.groupDepartureId?._id || booking.groupDepartureId;
+  if (departureId) return Boolean(await GroupDeparture.exists({ _id: departureId, 'operators.operatorId': userId }));
+  return (booking.assignedOperator?._id || booking.assignedOperator)?.toString() === userId;
+}
+
+function visibleBooking(booking, user, includeOperatorNotes = false) {
+  const roles = rolesFor(user);
+  if (roles.includes('admin') || includeOperatorNotes) return booking;
+  const value = typeof booking.toObject === 'function' ? booking.toObject() : { ...booking };
+  delete value.operatorNotes;
+  return value;
+}
 
 // Create a new booking
 export async function createBookingController(req, res) {
@@ -30,7 +50,8 @@ export async function createBookingController(req, res) {
     travelers,
     totalAmount,
     currency,
-    reservedSeats
+    reservedSeats,
+    customizations
   } = req.body;
 
   // Validate required fields
@@ -63,11 +84,12 @@ export async function createBookingController(req, res) {
     travelers,
     totalAmount,
     currency,
-    reservedSeats
+    reservedSeats,
+    customizations
   });
 
   if (result.error) {
-    return res.status(400).json({
+    return res.status(result.status || 400).json({
       success: false,
       message: result.error
     });
@@ -76,7 +98,7 @@ export async function createBookingController(req, res) {
   res.status(201).json({
     success: true,
     message: 'Booking created successfully',
-    booking: result.booking
+    booking: visibleBooking(result.booking, req.user)
   });
 }
 
@@ -100,7 +122,7 @@ export async function getBookingByIdController(req, res) {
   const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
   const isOperator = userRoles.map(r => r.toLowerCase()).includes('operator') || userRoles.map(r => r.toLowerCase()).includes('tour_operator');
   const isOwner = booking.customerId?._id?.toString() === user.id || booking.customerId?.toString() === user.id;
-  const isAssignedOperator = booking.assignedOperator?._id?.toString() === user.id || booking.assignedOperator?.toString() === user.id;
+  const isAssignedOperator = isOperator && await isBookingOperator(booking, user.id);
 
   if (!isAdmin && !isOwner && !(isOperator && isAssignedOperator)) {
     return res.status(403).json({
@@ -111,7 +133,7 @@ export async function getBookingByIdController(req, res) {
 
   res.json({
     success: true,
-    booking: result.booking
+    booking: visibleBooking(result.booking, req.user, isAssignedOperator)
   });
 }
 
@@ -124,7 +146,8 @@ export async function listBookingsController(req, res) {
     status,
     bookingType,
     startDate,
-    endDate
+    endDate,
+    assignedOperator
   } = req.query;
 
   // BOLA Check: Customers can only list their own bookings
@@ -145,7 +168,9 @@ export async function listBookingsController(req, res) {
     status,
     bookingType,
     startDate,
-    endDate
+    endDate,
+    operatorId: !isAdmin && isOperator ? user.id : undefined,
+    assignedOperator: isAdmin ? assignedOperator : undefined
   });
 
   if (result.error) {
@@ -157,7 +182,7 @@ export async function listBookingsController(req, res) {
 
   res.json({
     success: true,
-    bookings: result.bookings,
+    bookings: result.bookings.map(booking => visibleBooking(booking, user, isOperator)),
     count: result.bookings.length
   });
 }
@@ -178,6 +203,10 @@ export async function updateBookingController(req, res) {
   const isAdmin = userRoles.map(r => r.toLowerCase()).includes('admin');
   const isOwner = booking.customerId?._id?.toString() === user.id || booking.customerId?.toString() === user.id;
 
+  if (operatorNotes !== undefined && !isAdmin) {
+    return res.status(403).json({ success: false, message: 'Operator notes require administrator or assigned-operator access.' });
+  }
+
   if (!isAdmin && !isOwner) {
     return res.status(403).json({ success: false, message: 'Forbidden: cannot update this booking' });
   }
@@ -189,7 +218,7 @@ export async function updateBookingController(req, res) {
   });
 
   if (result.error) {
-    return res.status(400).json({
+    return res.status(result.status || 400).json({
       success: false,
       message: result.error
     });
@@ -198,8 +227,29 @@ export async function updateBookingController(req, res) {
   res.json({
     success: true,
     message: 'Booking updated successfully',
-    booking: result.booking
+    booking: visibleBooking(result.booking, req.user)
   });
+}
+
+// Internal notes have their own authorization boundary and do not change booking lifecycle fields.
+export async function updateOperatorNotesController(req, res) {
+  try {
+    const roles = rolesFor(req.user);
+    const isAdmin = roles.includes('admin');
+    if (!req.user || (!isAdmin && !isOperatorRole(roles))) {
+      return res.status(403).json({ success: false, message: 'Operator access required.' });
+    }
+    const existing = await getBookingById(req.params.bookingId);
+    if (existing.error) return res.status(404).json({ success: false, message: existing.error });
+    if (!isAdmin && !await isBookingOperator(existing.booking, req.user.id)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: you are not assigned to this booking.' });
+    }
+    const result = await updateOperatorNotes({ bookingId: req.params.bookingId, operatorNotes: req.body.operatorNotes });
+    if (result.error) return res.status(result.error === 'Booking not found' ? 404 : 400).json({ success: false, message: result.error });
+    return res.json({ success: true, booking: visibleBooking(result.booking, req.user, true) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to save operator notes.' });
+  }
 }
 
 // Cancel booking
@@ -236,7 +286,7 @@ export async function cancelBookingController(req, res) {
   });
 
   if (result.error) {
-    return res.status(400).json({
+    return res.status(result.status || 400).json({
       success: false,
       message: result.error
     });
@@ -245,7 +295,7 @@ export async function cancelBookingController(req, res) {
   res.json({
     success: true,
     message: 'Booking cancelled successfully',
-    booking: result.booking,
+    booking: visibleBooking(result.booking, req.user),
     refundAmount: result.refundAmount
   });
 }
@@ -285,7 +335,7 @@ export async function addPaymentController(req, res) {
   });
 
   if (result.error) {
-    return res.status(400).json({
+    return res.status(result.status || 400).json({
       success: false,
       message: result.error
     });
@@ -293,8 +343,9 @@ export async function addPaymentController(req, res) {
 
   res.json({
     success: true,
-    message: 'Payment added successfully',
-    booking: result.booking
+    message: result.payment?.status === 'PENDING' ? 'Payment submitted for administrator verification' : 'This reference was already submitted; its saved status is unchanged.',
+    payment: result.payment,
+    booking: visibleBooking(result.booking, req.user)
   });
 }
 
@@ -318,10 +369,10 @@ export async function checkInBookingController(req, res) {
 
     const result = await checkInBooking(bookingId, userId);
     if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+      return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
-    res.json({ success: true, message: 'Checked in successfully', booking: result.booking });
+    res.json({ success: true, message: 'Checked in successfully', booking: visibleBooking(result.booking, req.user) });
   } catch (err) {
     console.error('Check-in controller error:', err);
     res.status(500).json({ success: false, message: 'Server error during check-in' });
@@ -363,7 +414,7 @@ export async function completeBookingController(req, res) {
   const result = await completeBooking(bookingId);
 
   if (result.error) {
-    return res.status(400).json({
+    return res.status(result.status || 400).json({
       success: false,
       message: result.error
     });
@@ -372,7 +423,7 @@ export async function completeBookingController(req, res) {
   res.json({
     success: true,
     message: 'Booking marked as completed',
-    booking: result.booking
+    booking: visibleBooking(result.booking, req.user)
   });
 }
 
@@ -410,16 +461,16 @@ export async function processRefundController(req, res) {
     const { bookingId } = req.params;
     const adminId = req.user?.id || req.body.adminId; // Extract from verified user context
 
-    const result = await processRefund({ bookingId, adminId });
+    const result = await processRefund({ bookingId, adminId, transactionRef: req.body.transactionRef, notes: req.body.notes });
 
     if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+      return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
     res.json({
       success: true,
-      message: `Refund of $${result.refundAmount} processed for ${result.customer.fullName}`,
-      booking: result.booking,
+      message: `Completed manual refund recorded: ${result.booking.currency} ${result.refundAmount}`,
+      booking: visibleBooking(result.booking, req.user),
       refundAmount: result.refundAmount
     });
   } catch (err) {
@@ -455,13 +506,13 @@ export async function requestDateChangeController(req, res) {
     const result = await requestDateChange({ bookingId, userId, requestedDate, reason });
 
     if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+      return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
     res.json({
       success: true,
       message: result.message,
-      booking: result.booking
+      booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
@@ -485,13 +536,13 @@ export async function approveDateChangeController(req, res) {
     const result = await approveDateChange({ bookingId, adminId, newStartDate });
 
     if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+      return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
     res.json({
       success: true,
       message: result.message,
-      booking: result.booking
+      booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
@@ -515,15 +566,25 @@ export async function rejectDateChangeController(req, res) {
     const result = await rejectDateChange({ bookingId, adminId, reviewNotes });
 
     if (result.error) {
-      return res.status(400).json({ success: false, message: result.error });
+      return res.status(result.status || 400).json({ success: false, message: result.error });
     }
 
     res.json({
       success: true,
       message: result.message,
-      booking: result.booking
+      booking: visibleBooking(result.booking, req.user)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
   }
+}
+
+export async function listPendingPaymentsController(req, res) {
+  try { res.json({ success: true, payments: await listPendingPayments() }); }
+  catch { res.status(500).json({ success: false, message: 'Unable to load payment submissions.' }); }
+}
+export async function verifyPaymentController(req, res) {
+  const result = await verifyManualPayment({ ...req.params, adminId: req.user.id, approved: req.body.approved, notes: req.body.notes });
+  if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+  res.json({ success: true, message: 'Payment decision saved.', booking: result.booking, payment: result.payment });
 }

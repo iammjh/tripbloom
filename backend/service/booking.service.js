@@ -1,3 +1,6 @@
+import { reserveBooking, cancelReservation, bookingTransaction, domainError } from './reservation.service.js';
+import { paymentTotals } from './paymentAccounting.js';
+export { submitManualPayment as addPayment, recordManualRefund as processRefund } from './manualPayment.service.js';
 // booking.service.js
 import Booking from '../model/booking.model.js';
 import { TourPackage } from '../model/tourPackage.model.js';
@@ -5,257 +8,22 @@ import { GroupDeparture } from '../model/groupDeparture.model.js';
 import { User } from '../model/user.model.js';
 import { isUserKYCApproved, getUserKYCStatus } from './kyc.service.js';
 import { sendMessage } from './message.service.js';
+import { logActivity } from './activityLog.service.js';
 
 // Check and cancel unpaid bookings that have passed start date
 export async function cancelUnpaidExpiredBookings() {
-  const now = new Date();
-  
-  // Find bookings that:
-  // 1. Have started (startDate <= now)
-  // 2. Are not cancelled
-  // 3. Are not fully paid
-  const bookings = await Booking.find({
-    startDate: { $lte: now },
-    status: { $in: ['PENDING', 'CONFIRMED'] },
-    'cancellation.isCancelled': false
-  });
-
-  const cancelledBookings = [];
-  
+  const bookings = await Booking.find({ startDate: { $lte: new Date() }, status: { $in: ['PENDING', 'CONFIRMED'] } });
+  const cancelled = [];
   for (const booking of bookings) {
-    const totalPaid = booking.payments
-      .filter(p => p.status === 'SUCCESS' || p.status === 'COMPLETED' || p.status === 'CONFIRMED')
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
-    // If not fully paid, cancel the booking
-    if (totalPaid < booking.totalAmount) {
-      booking.status = 'CANCELLED';
-      booking.cancellation = {
-        isCancelled: true,
-        reason: 'Tour started without full payment',
-        cancelledAt: new Date(),
-        refundAmount: totalPaid // Refund any partial payments
-      };
-      // Ensure finalAmount exists to satisfy schema validation for older records
-      if (!booking.finalAmount) {
-        booking.finalAmount = booking.totalAmount || 0;
-      }
-      await booking.save();
-      cancelledBookings.push(booking);
-      
-      // Send platform notification message to the customer
-      try {
-        const recipientId = booking.customerId;
-        const adminUser = await User.findOne({ roles: { $in: ['admin', 'ADMIN'] } }).select('_id');
-        const senderId = adminUser ? adminUser._id : null;
-        if (recipientId && senderId) {
-          await sendMessage({
-            senderId,
-            recipientId,
-            content: `Your booking was automatically cancelled because the tour started without full payment. A refund of $${totalPaid} has been queued.`,
-            isBroadcast: false
-          });
-        }
-      } catch (err) {
-        console.error('Failed to send automatic cancellation message:', err);
-      }
-    }
+    const result = await cancelReservation({ bookingId: booking._id, reason: 'Tour started without full payment', fullRefund: true, onlyIfUnpaid: true });
+    if (result.error) return result;
+    if (!result.skipped) cancelled.push(result.booking);
   }
-  
-  return { cancelledCount: cancelledBookings.length, bookings: cancelledBookings };
+  return { cancelledCount: cancelled.length, bookings: cancelled };
 }
 
 // Create a new booking
-export async function createBooking({ 
-  customerId, 
-  packageId, 
-  bookingType, 
-  groupDepartureId, 
-  startDate, 
-  endDate, 
-  numTravelers, 
-  travelers, 
-  totalAmount, 
-  currency = 'BDT',
-  reservedSeats = [],
-  pointsToUse = 0
-}) {
-  try {
-    // Validate package exists
-    const tourPackage = await TourPackage.findById(packageId);
-    if (!tourPackage) {
-      return { error: 'Tour package not found' };
-    }
-
-    // Validate package is active
-    if (!tourPackage.isActive) {
-      return { error: 'This tour package is not currently available' };
-    }
-
-    // Check KYC requirements for international packages
-    if (tourPackage.isInternational) {
-      const kycApproved = await isUserKYCApproved(customerId);
-      if (!kycApproved) {
-        const kycStatus = await getUserKYCStatus(customerId);
-        if (!kycStatus) {
-          return { error: 'KYC verification required for international bookings. Please submit your KYC documents first.' };
-        } else if (kycStatus === 'pending') {
-          return { error: 'Your KYC verification is pending approval. Please wait for admin verification.' };
-        } else if (kycStatus === 'rejected') {
-          return { error: 'Your KYC verification was rejected. Please resubmit your documents.' };
-        }
-      }
-    }
-
-    // Get customer to check reward points
-    const customer = await User.findById(customerId);
-    if (!customer) {
-      return { error: 'Customer not found' };
-    }
-
-    // Validate and apply reward points
-    let discountAmount = 0;
-    let pointsUsed = 0;
-    
-    if (pointsToUse > 0) {
-      if (pointsToUse > customer.rewardPoints) {
-        return { error: `You only have ${customer.rewardPoints} reward points available` };
-      }
-      
-      // Calculate discount (max 20% of total)
-      discountAmount = Booking.calculateDiscountFromPoints(pointsToUse, totalAmount);
-      pointsUsed = Math.min(pointsToUse, discountAmount); // Only use points that give discount
-      
-      // Deduct points from customer
-      customer.rewardPoints -= pointsUsed;
-      customer.pointsHistory.push({
-        amount: -pointsUsed,
-        type: 'USED',
-        reason: `Used for booking discount`,
-        date: new Date()
-      });
-      await customer.save();
-    }
-
-    const finalAmount = totalAmount - discountAmount;
-
-    // Variable to store assigned operator (from departure or package)
-    let assignedOperatorId = null;
-
-    // For GROUP bookings, validate departure exists and has availability
-    if (bookingType === 'GROUP') {
-      if (!groupDepartureId) {
-        return { error: 'Group departure ID is required for group bookings' };
-      }
-
-      const departure = await GroupDeparture.findById(groupDepartureId);
-      if (!departure) {
-        return { error: 'Group departure not found' };
-      }
-
-      console.log('[Booking Service] Group departure operators:', departure.operators);
-
-      // Check if departure is open for booking
-      if (departure.status !== 'OPEN') {
-        return { error: `This departure is ${departure.status.toLowerCase()} and not available for booking` };
-      }
-
-      // Check seat availability
-      const availableSeats = departure.totalSeats - departure.bookedSeats;
-      if (availableSeats < numTravelers) {
-        return { error: `Only ${availableSeats} seats available. You requested ${numTravelers} seats.` };
-      }
-
-      // Validate seat selection if provided
-      if (reservedSeats.length > 0) {
-        if (reservedSeats.length !== numTravelers) {
-          return { error: 'Number of reserved seats must match number of travelers' };
-        }
-
-        // Check if seats are already taken
-        const existingBookings = await Booking.find({
-          groupDepartureId,
-          status: { $in: ['PENDING', 'CONFIRMED'] }
-        });
-
-        const takenSeats = existingBookings.flatMap(b => b.reservedSeats);
-        const conflictingSeats = reservedSeats.filter(seat => takenSeats.includes(seat));
-
-        if (conflictingSeats.length > 0) {
-          return { error: `Seats ${conflictingSeats.join(', ')} are already reserved` };
-        }
-      }
-
-      // Update departure booked seats
-      departure.bookedSeats += numTravelers;
-      if (departure.bookedSeats >= departure.totalSeats) {
-        departure.status = 'FULL';
-      }
-      await departure.save();
-      
-      // Auto-assign operator from group departure if available
-      if (departure.operators && departure.operators.length > 0) {
-        assignedOperatorId = departure.operators[0].operatorId;
-        console.log('[Booking Service] Auto-assigning operator from departure:', assignedOperatorId);
-      } else {
-        console.log('[Booking Service] No operators found on departure');
-      }
-    }
-
-    // Validate travelers data
-    if (travelers.length !== numTravelers) {
-      return { error: 'Number of travelers must match traveler details provided' };
-    }
-
-    // Create the booking
-    const booking = new Booking({
-      customerId,
-      packageId,
-      bookingType,
-      groupDepartureId: groupDepartureId || null,
-      startDate,
-      endDate,
-      numTravelers,
-      travelers,
-      totalAmount,
-      pointsUsed,
-      discountAmount,
-      finalAmount,
-      currency,
-      status: 'PENDING',
-      reservedSeats,
-      assignedOperator: assignedOperatorId
-    });
-
-    // Store booking reference for points history
-    if (pointsUsed > 0) {
-      const lastHistoryEntry = customer.pointsHistory[customer.pointsHistory.length - 1];
-      if (lastHistoryEntry) {
-        lastHistoryEntry.bookingId = booking._id;
-        await customer.save();
-      }
-    }
-
-    await booking.save();
-
-    console.log('[Booking Service] Booking created with assignedOperator:', assignedOperatorId);
-
-    // Populate references for response
-    await booking.populate('customerId', 'fullName name email phone');
-    await booking.populate('packageId', 'title destination type category');
-    await booking.populate('assignedOperator', 'fullName name email phone');
-    if (groupDepartureId) {
-      await booking.populate('groupDepartureId', 'startDate endDate totalSeats bookedSeats pricePerPerson');
-    }
-
-    console.log('[Booking Service] Populated booking.assignedOperator:', booking.assignedOperator);
-
-    return { booking };
-  } catch (err) {
-    console.error('Error creating booking:', err);
-    return { error: err.message || 'Failed to create booking' };
-  }
-}
+export const createBooking = reserveBooking;
 
 // Get booking by ID
 export async function getBookingById(bookingId) {
@@ -263,13 +31,14 @@ export async function getBookingById(bookingId) {
     const booking = await Booking.findById(bookingId)
       .populate('customerId', 'fullName name email phone')
       .populate('packageId') // Populate all package fields
-      .populate('groupDepartureId', 'startDate endDate totalSeats bookedSeats pricePerPerson')
+      .populate({ path: 'groupDepartureId', select: 'startDate endDate totalSeats bookedSeats pricePerPerson operators', populate: { path: 'operators.operatorId', select: 'fullName email phone' } })
       .populate('assignedOperator', 'fullName name email phone');
 
     if (!booking) {
       return { error: 'Booking not found' };
     }
 
+    if (Array.isArray(booking.groupDepartureId?.operators)) booking.assignedOperator = booking.groupDepartureId.operators[0]?.operatorId || null;
     return { booking };
   } catch (err) {
     console.error('Error fetching booking:', err);
@@ -285,7 +54,9 @@ export async function listBookings({
   status, 
   bookingType,
   startDate,
-  endDate 
+  endDate,
+  operatorId,
+  assignedOperator
 }) {
   try {
     const filter = {};
@@ -294,6 +65,14 @@ export async function listBookings({
     if (packageId) filter.packageId = packageId;
     if (groupDepartureId) filter.groupDepartureId = groupDepartureId;
     if (bookingType) filter.bookingType = bookingType;
+    if (assignedOperator) filter.assignedOperator = assignedOperator;
+    if (operatorId) {
+      const departures = await GroupDeparture.find({ 'operators.operatorId': operatorId }).select('_id');
+      filter.$or = [
+        { assignedOperator: operatorId, groupDepartureId: null },
+        { groupDepartureId: { $in: departures.map(departure => departure._id.toString()) } }
+      ];
+    }
 
     if (status) {
       if (typeof status === 'string' && status.includes(',')) {
@@ -313,14 +92,31 @@ export async function listBookings({
     const bookings = await Booking.find(filter)
       .populate('customerId', 'fullName name email phone')
       .populate('packageId') // Populate all package fields for customer dashboard
-      .populate('groupDepartureId', 'startDate endDate totalSeats bookedSeats pricePerPerson')
+      .populate({ path: 'groupDepartureId', select: 'startDate endDate totalSeats bookedSeats pricePerPerson operators', populate: { path: 'operators.operatorId', select: 'fullName email phone' } })
       .populate('assignedOperator', 'fullName name email phone')
       .sort({ createdAt: -1 });
 
+    for (const booking of bookings) if (Array.isArray(booking.groupDepartureId?.operators)) booking.assignedOperator = booking.groupDepartureId.operators[0]?.operatorId || null;
     return { bookings };
   } catch (err) {
     console.error('Error listing bookings:', err);
     return { error: 'Failed to list bookings' };
+  }
+}
+
+export async function updateOperatorNotes({ bookingId, operatorNotes }) {
+  if (typeof operatorNotes !== 'string' || operatorNotes.length > 5000) {
+    return { error: 'Operator notes must be text of at most 5000 characters.' };
+  }
+  try {
+    const booking = await Booking.findByIdAndUpdate(
+      bookingId,
+      { $set: { operatorNotes: operatorNotes.trim() } },
+      { new: true, runValidators: true }
+    ).select('_id operatorNotes');
+    return booking ? { booking } : { error: 'Booking not found' };
+  } catch (error) {
+    return { error: 'Failed to save operator notes.' };
   }
 }
 
@@ -354,7 +150,7 @@ export async function updateBooking({ bookingId, travelers, operatorNotes }) {
     await booking.populate('packageId', 'title destination type category');
     await booking.populate('assignedOperator', 'fullName name email phone');
     if (booking.groupDepartureId) {
-      await booking.populate('groupDepartureId', 'startDate endDate totalSeats bookedSeats pricePerPerson');
+      await booking.populate({ path: 'groupDepartureId', select: 'startDate endDate totalSeats bookedSeats pricePerPerson operators', populate: { path: 'operators.operatorId', select: 'fullName email phone' } });
     }
 
     return { booking };
@@ -365,62 +161,7 @@ export async function updateBooking({ bookingId, travelers, operatorNotes }) {
 }
 
 // Cancel booking
-export async function cancelBooking({ bookingId, userId, reason }) {
-  try {
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
-
-    // Check if already cancelled or refunded
-    if (booking.status === 'CANCELLED' || booking.status === 'REFUNDED' || booking.cancellation.isCancelled) {
-      return { error: 'Booking is already cancelled' };
-    }
-
-    // Check if booking can be cancelled (not completed)
-    if (booking.status === 'COMPLETED') {
-      return { error: 'Cannot cancel a completed booking' };
-    }
-
-    // Calculate refund amount based on cancellation policy
-    const refundAmount = calculateRefund(booking);
-
-    // For GROUP bookings, release the seats
-    if (booking.bookingType === 'GROUP' && booking.groupDepartureId) {
-      const departure = await GroupDeparture.findById(booking.groupDepartureId);
-      if (departure) {
-        departure.bookedSeats -= booking.numTravelers;
-        if (departure.status === 'FULL' && departure.bookedSeats < departure.totalSeats) {
-          departure.status = 'OPEN';
-        }
-        await departure.save();
-      }
-    }
-
-    // Cancel the booking using the model method
-    await booking.cancelBooking(userId, reason, refundAmount);
-
-    // If there's a refund, create a refund payment record
-    if (refundAmount > 0) {
-      booking.payments.push({
-        amount: refundAmount,
-        method: 'REFUND',
-        status: 'PENDING',
-        transactionRef: `REFUND-${booking._id}`
-      });
-      await booking.save();
-    }
-
-    await booking.populate('customerId', 'name email phone');
-    await booking.populate('packageId', 'title destination type category');
-    await booking.populate('assignedOperator', 'fullName name email phone');
-
-    return { booking, refundAmount };
-  } catch (err) {
-    console.error('Error cancelling booking:', err);
-    return { error: 'Failed to cancel booking' };
-  }
-}
+export const cancelBooking = cancelReservation;
 
 // Request date change for a booking
 export async function requestDateChange({ bookingId, userId, requestedDate, reason }) {
@@ -477,53 +218,53 @@ export async function requestDateChange({ bookingId, userId, requestedDate, reas
 }
 
 // Approve date change request (Admin)
-export async function approveDateChange({ bookingId, adminId, newStartDate }) {
-  try {
-    const booking = await Booking.findById(bookingId)
-      .populate('customerId', 'fullName email')
-      .populate('packageId', 'title defaultDays defaultNights');
-    
-    if (!booking) {
-      return { error: 'Booking not found' };
+async function applyDateChangeApproval({ bookingId, adminId, newStartDate }) {
+  const start = new Date(newStartDate);
+  if (!Number.isFinite(+start) || start <= new Date()) return { error: 'Choose a valid future date.' };
+  return bookingTransaction(async session => {
+    const booking = await Booking.findById(bookingId, null, { session });
+    if (!booking) throw domainError('Booking not found.', 404);
+    if (!['PENDING', 'CONFIRMED'].includes(booking.status) || booking.dateChangeRequest?.status !== 'PENDING') throw domainError('No active pending date change request found.');
+    const oldDate = booking.startDate;
+    if (booking.bookingType === 'GROUP') {
+      const from = new Date(start); from.setUTCHours(0, 0, 0, 0);
+      const until = new Date(+from + 86400000);
+      const target = await GroupDeparture.findOne({ packageId: booking.packageId, startDate: { $gte: from, $lt: until }, status: 'OPEN' }, null, { session });
+      if (!target || String(target._id) === String(booking.groupDepartureId)) throw domainError('Choose a different open departure for this package on the requested date.');
+      if (target.pricePerPerson * booking.numTravelers !== booking.totalAmount) throw domainError('The target departure has a different price; arrange a new booking rather than changing this contract.');
+      const capacity = target.totalSeats - target.seatMap.filter(s => s.status === 'BLOCKED').length;
+      if (target.bookedSeats + booking.numTravelers > capacity) throw domainError('The target departure has insufficient availability.');
+      const existing = await Booking.find({ groupDepartureId: target._id, status: { $in: ['PENDING', 'CONFIRMED'] } }, null, { session });
+      const taken = new Set(existing.flatMap(b => b.reservedSeats));
+      for (const number of booking.reservedSeats) {
+        const seat = target.seatMap.find(s => s.seatNumber === number);
+        if (taken.has(number) || (target.seatMap.length && (!seat || seat.status !== 'AVAILABLE'))) throw domainError('The selected seats are unavailable on the target departure.');
+      }
+      const previous = await GroupDeparture.findById(booking.groupDepartureId, null, { session });
+      if (!previous) throw domainError('Original departure not found.');
+      previous.bookedSeats = Math.max(0, previous.bookedSeats - booking.numTravelers);
+      if (previous.status === 'FULL') previous.status = 'OPEN';
+      for (const seat of previous.seatMap) if (String(seat.bookingId) === String(booking._id)) { seat.status = 'AVAILABLE'; seat.bookingId = undefined; seat.bookedBy = undefined; seat.checkedIn = false; }
+      target.bookedSeats += booking.numTravelers;
+      if (target.bookedSeats >= capacity) target.status = 'FULL';
+      for (const seat of target.seatMap) if (booking.reservedSeats.includes(seat.seatNumber)) { seat.status = 'BOOKED'; seat.bookingId = booking._id; seat.bookedBy = booking.customerId; seat.checkedIn = false; }
+      await previous.save({ session }); await target.save({ session });
+      booking.groupDepartureId = target._id; booking.assignedOperator = target.operators[0]?.operatorId || null;
+      booking.startDate = target.startDate; booking.endDate = target.endDate;
+    } else {
+      const pkg = await TourPackage.findById(booking.packageId, null, { session });
+      if (!pkg) throw domainError('Package not found.');
+      booking.startDate = start; booking.endDate = new Date(start); booking.endDate.setDate(booking.endDate.getDate() + pkg.defaultDays);
     }
-
-    if (!booking.dateChangeRequest || booking.dateChangeRequest.status !== 'PENDING') {
-      return { error: 'No pending date change request found' };
-    }
-
-    // Update the booking dates
-    const oldStartDate = booking.startDate;
-    booking.startDate = new Date(newStartDate);
-    
-    // Calculate new end date based on package duration
-    if (booking.packageId) {
-      const durationDays = booking.packageId.defaultDays || 1;
-      const newEndDate = new Date(booking.startDate);
-      newEndDate.setDate(newEndDate.getDate() + durationDays);
-      booking.endDate = newEndDate;
-    }
-
-    // Update date change request status
-    booking.dateChangeRequest.status = 'APPROVED';
-    booking.dateChangeRequest.reviewedBy = adminId;
-    booking.dateChangeRequest.reviewedAt = new Date();
-    booking.dateChangeRequest.reviewNotes = `Date changed from ${oldStartDate.toDateString()} to ${booking.startDate.toDateString()}`;
-
-    await booking.save();
-
-    return { 
-      success: true, 
-      booking,
-      message: 'Date change request approved successfully'
-    };
-  } catch (err) {
-    console.error('Error approving date change:', err);
-    return { error: 'Failed to approve date change request' };
-  }
+    booking.dateChangeRequest.status = 'APPROVED'; booking.dateChangeRequest.reviewedBy = adminId; booking.dateChangeRequest.reviewedAt = new Date();
+    booking.dateChangeRequest.reviewNotes = `Date changed from ${oldDate.toISOString()} to ${booking.startDate.toISOString()}`;
+    await booking.save({ session });
+    return { success: true, booking, message: 'Date change request approved successfully' };
+  });
 }
 
 // Reject date change request (Admin)
-export async function rejectDateChange({ bookingId, adminId, reviewNotes }) {
+async function applyDateChangeRejection({ bookingId, adminId, reviewNotes }) {
   try {
     const booking = await Booking.findById(bookingId)
       .populate('customerId', 'fullName email')
@@ -556,93 +297,6 @@ export async function rejectDateChange({ bookingId, adminId, reviewNotes }) {
   }
 }
 
-// Calculate refund based on cancellation policy
-function calculateRefund(booking) {
-  const now = new Date();
-  const startDate = new Date(booking.startDate);
-  const totalPaid = booking.totalPaid || 0;
-
-  // Already started or completed - no refund
-  if (now >= startDate) {
-    return 0;
-  }
-
-  const daysUntilStart = Math.ceil((startDate - now) / (1000 * 60 * 60 * 24));
-
-  // Refund policy:
-  // - More than 30 days: 100% refund
-  // - 15-30 days: 75% refund
-  // - 7-14 days: 50% refund
-  // - 3-6 days: 25% refund
-  // - Less than 3 days: 10% refund
-
-  let refundPercentage;
-  if (daysUntilStart > 30) {
-    refundPercentage = 1.0;
-  } else if (daysUntilStart >= 15) {
-    refundPercentage = 0.75;
-  } else if (daysUntilStart >= 7) {
-    refundPercentage = 0.50;
-  } else if (daysUntilStart >= 3) {
-    refundPercentage = 0.25;
-  } else {
-    refundPercentage = 0.10;
-  }
-
-  return Math.round(totalPaid * refundPercentage);
-}
-
-// Add payment to booking
-export async function addPayment({ bookingId, amount, method, transactionRef }) {
-  try {
-    const booking = await Booking.findById(bookingId)
-      .populate('customerId')
-      .populate('packageId');
-      
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
-
-    if (booking.status === 'CANCELLED' || booking.status === 'REFUNDED') {
-      return { error: 'Cannot add payment to cancelled or refunded booking' };
-    }
-
-    // Check KYC for large payments (above 50,000 BDT)
-    const LARGE_PAYMENT_THRESHOLD = 50000;
-    if (amount >= LARGE_PAYMENT_THRESHOLD) {
-      const kycApproved = await isUserKYCApproved(booking.customerId._id || booking.customerId);
-      if (!kycApproved) {
-        const kycStatus = await getUserKYCStatus(booking.customerId._id || booking.customerId);
-        if (!kycStatus) {
-          return { error: `Payments above ৳${LARGE_PAYMENT_THRESHOLD.toLocaleString()} require KYC verification. Please submit your KYC documents first.` };
-        } else if (kycStatus === 'pending') {
-          return { error: 'Your KYC verification is pending. Large payments will be enabled once approved.' };
-        } else if (kycStatus === 'rejected') {
-          return { error: 'Your KYC verification was rejected. Please resubmit your documents to make large payments.' };
-        }
-      }
-    }
-
-    const payment = {
-      amount,
-      method: method.toUpperCase(),
-      status: 'SUCCESS', // In real app, this would be PENDING until verified
-      transactionRef,
-      paidAt: new Date()
-    };
-
-    await booking.addPayment(payment);
-
-    await booking.populate('customerId', 'name email phone');
-    await booking.populate('packageId', 'title destination type category');
-
-    return { booking };
-  } catch (err) {
-    console.error('Error adding payment:', err);
-    return { error: 'Failed to add payment' };
-  }
-}
-
 // Get booking statistics for a customer
 export async function getCustomerBookingStats(customerId) {
   try {
@@ -654,9 +308,7 @@ export async function getCustomerBookingStats(customerId) {
       confirmed: bookings.filter(b => b.status === 'CONFIRMED').length,
       completed: bookings.filter(b => b.status === 'COMPLETED').length,
       cancelled: bookings.filter(b => b.status === 'CANCELLED').length,
-      totalSpent: bookings
-        .filter(b => b.status !== 'CANCELLED')
-        .reduce((sum, b) => sum + (b.totalPaid || 0), 0),
+      totalSpent: bookings.reduce((sum, b) => sum + paymentTotals(b).net, 0),
       upcomingTrips: bookings.filter(b => 
         (b.status === 'CONFIRMED' || b.status === 'PENDING') && 
         new Date(b.startDate) > new Date()
@@ -672,129 +324,33 @@ export async function getCustomerBookingStats(customerId) {
 
 // Mark booking as completed (usually called after end date)
 export async function completeBooking(bookingId) {
-  try {
-    const booking = await Booking.findById(bookingId).populate('packageId');
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
-
-    // Idempotent: if already completed, return early
-    if (booking.status === 'COMPLETED') {
-      return { booking, message: 'Already completed' };
-    }
-
-    if (booking.status === 'CANCELLED') {
-      return { error: 'Cannot complete a cancelled booking' };
-    }
-
-    booking.status = 'COMPLETED';
-    
-    // Award reward points to customer
-    const customer = await User.findById(booking.customerId);
-    if (customer && booking.packageId) {
-      const pointsEarned = Booking.calculatePointsForCategory(
-        booking.packageId.category, 
-        booking.finalAmount
-      );
-      
-      booking.pointsEarned = pointsEarned;
-      customer.rewardPoints += pointsEarned;
-      customer.pointsHistory.push({
-        amount: pointsEarned,
-        type: 'EARNED',
-        bookingId: booking._id,
-        reason: `Earned from completing ${booking.packageId.category} tour`,
-        date: new Date()
-      });
-      
-      await customer.save();
-    }
-    
-    await booking.save();
-
-    return { booking, pointsEarned: booking.pointsEarned };
-  } catch (err) {
-    console.error('Error completing booking:', err);
-    return { error: 'Failed to complete booking' };
-  }
+  return bookingTransaction(async session => {
+    const booking = await Booking.findById(bookingId, null, { session });
+    if (!booking) throw domainError('Booking not found.', 404);
+    if (booking.status === 'COMPLETED') return { booking, message: 'Already completed' };
+    if (booking.status !== 'CONFIRMED' || paymentTotals(booking).remaining > 0) throw domainError('Only a fully paid, confirmed booking can be completed.');
+    const customer = await User.findById(booking.customerId, null, { session });
+    const pkg = await TourPackage.findById(booking.packageId, null, { session });
+    if (!customer || !pkg) throw domainError('Booking customer or package is unavailable.');
+    const pointsEarned = Booking.calculatePointsForCategory(pkg.category, booking.finalAmount ?? booking.totalAmount);
+    booking.status = 'COMPLETED'; booking.pointsEarned = pointsEarned;
+    customer.rewardPoints += pointsEarned;
+    customer.pointsHistory.push({ amount: pointsEarned, type: 'EARNED', bookingId: booking._id, reason: `Earned from completing ${pkg.category || 'tour'}`, date: new Date() });
+    await customer.save({ session });
+    await booking.save({ session });
+    return { booking, pointsEarned };
+  });
 }
 
-// Auto-complete bookings whose endDate has passed
 export async function autoCompletePassedBookings() {
-  try {
-    const now = new Date();
-
-    // Find candidate bookings (may return many; index on endDate+status recommended)
-    const candidates = await Booking.find({
-      endDate: { $lte: now },
-      status: { $in: ['CONFIRMED', 'CHECKED_IN'] },
-      'cancellation.isCancelled': false
-    }).select('_id');
-
-    const completed = [];
-
-    for (const c of candidates) {
-      try {
-        // Atomically claim the booking by setting status -> COMPLETED
-        const claimed = await Booking.findOneAndUpdate(
-          { _id: c._id, status: { $in: ['CONFIRMED', 'CHECKED_IN'] }, 'cancellation.isCancelled': false },
-          { $set: { status: 'COMPLETED' } },
-          { new: true }
-        );
-
-        if (!claimed) {
-          // someone else claimed or status changed
-          continue;
-        }
-
-        // Award points to customer (replicate part of completeBooking logic)
-        try {
-          const customer = await User.findById(claimed.customerId);
-          if (customer) {
-            // booking may not have package populated, get package
-            let pkg = claimed.packageId;
-            if (!pkg || !(pkg.category)) {
-              pkg = await TourPackage.findById(claimed.packageId);
-            }
-
-            const finalAmount = Number(claimed.finalAmount ?? claimed.totalAmount ?? 0) || 0;
-            const category = pkg?.category || null;
-            const pointsEarned = Number(Booking.calculatePointsForCategory(
-              category,
-              finalAmount
-            )) || 0;
-
-            // store pointsEarned safely
-            claimed.pointsEarned = pointsEarned;
-            // ensure finalAmount exists on booking for older records
-            if (!claimed.finalAmount) claimed.finalAmount = finalAmount;
-            await claimed.save();
-
-            customer.rewardPoints = (customer.rewardPoints || 0) + pointsEarned;
-            customer.pointsHistory.push({
-              amount: pointsEarned,
-              type: 'EARNED',
-              bookingId: claimed._id,
-              reason: `Earned from completing ${pkg?.category || 'tour'}`,
-              date: new Date()
-            });
-            await customer.save();
-          }
-        } catch (err) {
-          console.error(`Error awarding points for booking ${claimed._id}:`, err);
-        }
-
-        completed.push(claimed._id);
-      } catch (err) {
-        console.error(`Error processing candidate booking ${c._id}:`, err);
-      }
-    }
-
-    return { completedCount: completed.length, completed };
-  } catch (err) {
-    console.error('Error running autoCompletePassedBookings:', err);
-    return { error: err.message };
+  const candidates = await Booking.find({ endDate: { $lte: new Date() }, status: 'CONFIRMED', 'cancellation.isCancelled': false }).select('_id');
+  const completed = [];
+  for (const candidate of candidates) {
+    const result = await completeBooking(candidate._id);
+    if (result.error) return { ...result, completedCount: completed.length, completed };
+    completed.push(candidate._id);
   }
+  return { completedCount: completed.length, completed };
 }
 
 // Mark booking as checked in by customer
@@ -807,15 +363,14 @@ export async function checkInBooking(bookingId, userId) {
       return { error: 'Cannot check in for cancelled or refunded booking' };
     }
 
+    if (booking.status !== 'CONFIRMED' || paymentTotals(booking).remaining > 0) return { error: 'Only a fully paid, confirmed booking can check in.' };
+
     // Allow check-in if booking exists and not already checked in
     booking.checkedIn = true;
     booking.checkedInAt = new Date();
     booking.checkedInByUser = userId || null;
 
-    // If booking was pending, optionally mark confirmed
-    if (booking.status === 'PENDING') {
-      booking.status = 'CONFIRMED';
-    }
+
 
     await booking.save();
 
@@ -830,92 +385,33 @@ export async function checkInBooking(bookingId, userId) {
 }
 
 // Process refund for a cancelled booking
-export async function processRefund({ bookingId, adminId }) {
-  try {
-    const booking = await Booking.findById(bookingId)
-      .populate('customerId', 'fullName email')
-      .populate('packageId', 'title');
-    
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
 
-    if (booking.status !== 'CANCELLED' || !booking.cancellation.isCancelled) {
-      return { error: 'Booking is not cancelled' };
-    }
-
-    if (booking.cancellation.refundProcessed) {
-      return { error: 'Refund already processed' };
-    }
-
-    // Calculate total paid amount
-    const totalPaid = booking.payments
-      .filter(p => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    // Check if customer actually paid anything
-    if (totalPaid === 0) {
-      return { error: 'No refund applicable - customer did not make any payments' };
-    }
-
-    // Ensure finalAmount exists for old bookings
-    if (!booking.finalAmount) {
-      booking.finalAmount = booking.totalAmount;
-    }
-
-    // Calculate refund amount if not set or is 0
-    let refundAmount = booking.cancellation.refundAmount || 0;
-    if (refundAmount === 0) {
-      // Use refund policy calculation based on days until start
-      const now = new Date();
-      const startDate = new Date(booking.startDate);
-      const daysUntilStart = Math.ceil((startDate - now) / (1000 * 60 * 60 * 24));
-      
-      let refundPercentage = 0;
-      if (daysUntilStart > 30) {
-        refundPercentage = 1.0;
-      } else if (daysUntilStart >= 15) {
-        refundPercentage = 0.75;
-      } else if (daysUntilStart >= 7) {
-        refundPercentage = 0.50;
-      } else if (daysUntilStart >= 3) {
-        refundPercentage = 0.25;
-      } else if (daysUntilStart > 0) {
-        refundPercentage = 0.10;
-      }
-      
-      refundAmount = Math.round(totalPaid * refundPercentage);
-      
-      // Update the booking with calculated refund amount
-      booking.cancellation.refundAmount = refundAmount;
-    }
-
-    // Mark refund as processed
-    booking.cancellation.refundProcessed = true;
-    booking.cancellation.refundProcessedAt = new Date();
-    booking.cancellation.refundProcessedBy = adminId;
-    booking.status = 'REFUNDED';
-    
-    // Create refund payment record
-    booking.payments.push({
-      amount: refundAmount,
-      method: 'REFUND',
-      status: 'SUCCESS',
-      transactionRef: `REFUND-${booking._id}-${Date.now()}`,
-      paidAt: new Date()
+// Date change decisions are recorded in the activity log after they are saved.
+export async function approveDateChange(args) {
+  const result = await applyDateChangeApproval(args);
+  if (result?.success) {
+    await logActivity({
+      adminId: args.adminId,
+      action: 'DATE_CHANGE_APPROVED',
+      targetType: 'Booking',
+      targetId: args.bookingId,
+      description: `Approved date change on booking ${result.booking?.bookingCode || String(args.bookingId).slice(-6)}. ${result.booking?.dateChangeRequest?.reviewNotes || ''}`.trim(),
     });
-
-    await booking.save();
-
-    return { 
-      success: true,
-      booking,
-      refundAmount: refundAmount,
-      customer: booking.customerId
-    };
-  } catch (err) {
-    console.error('Error processing refund:', err);
-    return { error: 'Failed to process refund', details: err.message };
   }
+  return result;
 }
 
+export async function rejectDateChange(args) {
+  const result = await applyDateChangeRejection(args);
+  if (result?.success) {
+    await logActivity({
+      adminId: args.adminId,
+      action: 'DATE_CHANGE_REJECTED',
+      targetType: 'Booking',
+      targetId: args.bookingId,
+      description: `Rejected date change on booking ${result.booking?.bookingCode || String(args.bookingId).slice(-6)}`,
+      metadata: { reviewNotes: args.reviewNotes || '' },
+    });
+  }
+  return result;
+}

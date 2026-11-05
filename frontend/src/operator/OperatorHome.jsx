@@ -1,5 +1,7 @@
+import { LuBell, LuBus, LuCalendar, LuCircleCheck, LuClock, LuCloudRain, LuMapPin, LuPlay, LuTriangleAlert, LuUsers } from 'react-icons/lu';
+import { ChecklistIcon, AnnouncementIcon } from '../components/ui/icons.js';
 import React, { useState, useEffect } from 'react';
-import { FaExclamationTriangle, FaCheckCircle, FaBus, FaUsers, FaCalendarAlt, FaClock, FaMapMarkerAlt, FaCloudSunRain, FaBell, FaPlay } from 'react-icons/fa';
+
 
 const OperatorHome = () => {
   const operatorId = localStorage.getItem('userId');
@@ -88,7 +90,7 @@ const OperatorHome = () => {
     if (upcoming24h.length > 0) {
       alertsList.push({
         type: 'warning',
-        icon: FaExclamationTriangle,
+        icon: LuTriangleAlert,
         message: `${upcoming24h.length} departure(s) within 24h - verify itinerary uploaded`,
         action: 'View Departures',
         actionLink: '/operator/departures'
@@ -100,21 +102,10 @@ const OperatorHome = () => {
     if (cancelledToday.length > 0) {
       alertsList.push({
         type: 'error',
-        icon: FaExclamationTriangle,
+        icon: LuTriangleAlert,
         message: `${cancelledToday.length} departure(s) cancelled today by admin`,
         action: 'View Details',
         actionLink: '/operator/departures'
-      });
-    }
-
-    // Weather warning (mock data)
-    if (today.length > 0 && Math.random() > 0.7) {
-      alertsList.push({
-        type: 'info',
-        icon: FaCloudSunRain,
-        message: 'Weather alert: Rain expected in Cox\'s Bazar region',
-        action: 'View Forecast',
-        actionLink: '#'
       });
     }
 
@@ -123,7 +114,7 @@ const OperatorHome = () => {
     if (lowSeats.length > 0) {
       alertsList.push({
         type: 'info',
-        icon: FaUsers,
+        icon: LuUsers,
         message: `${lowSeats.length} departure(s) with low booking - under 30% capacity`,
         action: 'View Details',
         actionLink: '/operator/departures'
@@ -163,7 +154,7 @@ const OperatorHome = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-            <FaBus className="mr-3 text-orange-600" />
+            <LuBus aria-hidden="true" className="mr-3 text-orange-600" />
             Today's Departures
           </h2>
           <span className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-full font-semibold">
@@ -173,7 +164,7 @@ const OperatorHome = () => {
 
         {todayDepartures.length === 0 ? (
           <div className="text-center py-12">
-            <FaCheckCircle className="text-6xl text-green-500 mx-auto mb-4 opacity-50" />
+            <LuCircleCheck aria-hidden="true" className="text-6xl text-green-500 mx-auto mb-4 opacity-50" />
             <p className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No trips today</p>
             <p className="text-gray-500 dark:text-gray-400">
               {next7Days.find(d => d.count > 0) 
@@ -200,12 +191,12 @@ const OperatorHome = () => {
                       </h3>
                       <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
                         <span className="flex items-center">
-                          <FaClock className="mr-2 text-orange-600" />
+                          <LuClock aria-hidden="true" className="mr-2 text-orange-600" />
                           {new Date(dep.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - 
                           {new Date(dep.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         <span className="flex items-center">
-                          <FaMapMarkerAlt className="mr-2 text-orange-600" />
+                          <LuMapPin aria-hidden="true" className="mr-2 text-orange-600" />
                           {dep.packageId?.destination || 'Meeting Point TBD'}
                         </span>
                       </div>
@@ -242,7 +233,7 @@ const OperatorHome = () => {
                       View Details
                     </button>
                     <button className="flex items-center bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-semibold transition-colors">
-                      <FaPlay className="mr-2" />
+                      <LuPlay aria-hidden="true" className="mr-2" />
                       Start Tour
                     </button>
                   </div>
@@ -256,7 +247,7 @@ const OperatorHome = () => {
       {/* Next 7 Days Timeline */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-          <FaCalendarAlt className="mr-3 text-blue-600" />
+          <LuCalendar aria-hidden="true" className="mr-3 text-blue-600" />
           Next 7 Days
         </h2>
         
@@ -284,7 +275,7 @@ const OperatorHome = () => {
                 </div>
                 {day.count > 0 ? (
                   <div className="flex items-center justify-center">
-                    <FaBus className="text-blue-600 mr-1 text-xs" />
+                    <LuBus aria-hidden="true" className="text-blue-600 mr-1 text-xs" />
                     <span className="text-sm font-bold text-blue-600">{day.count}</span>
                   </div>
                 ) : (
@@ -299,7 +290,7 @@ const OperatorHome = () => {
       {/* Alerts & Tasks */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-          <FaBell className="mr-3 text-yellow-600" />
+          <LuBell aria-hidden="true" className="mr-3 text-yellow-600" />
           Alerts & Tasks
           {alerts.length > 0 && (
             <span className="ml-3 px-3 py-1 bg-red-500 text-white text-xs rounded-full font-bold">
@@ -310,7 +301,7 @@ const OperatorHome = () => {
 
         {alerts.length === 0 ? (
           <div className="text-center py-8">
-            <FaCheckCircle className="text-5xl text-green-500 mx-auto mb-3 opacity-50" />
+            <LuCircleCheck aria-hidden="true" className="text-5xl text-green-500 mx-auto mb-3 opacity-50" />
             <p className="text-gray-600 dark:text-gray-400">All clear! No pending alerts.</p>
           </div>
         ) : (
@@ -354,13 +345,13 @@ const OperatorHome = () => {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white p-6 rounded-xl shadow-lg font-bold text-lg transition-all transform hover:scale-105">
-          📋 View Today's Passenger List
+          <ChecklistIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> View Today's Passenger List
         </button>
         <button className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white p-6 rounded-xl shadow-lg font-bold text-lg transition-all transform hover:scale-105">
           ▶️ Mark Tour as Started
         </button>
         <button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white p-6 rounded-xl shadow-lg font-bold text-lg transition-all transform hover:scale-105">
-          📢 Send Broadcast Message
+          <AnnouncementIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> Send Broadcast Message
         </button>
       </div>
     </div>

@@ -1,83 +1,91 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaUser, FaUsers, FaHotel, FaBus, FaUtensils, FaMapSigns } from 'react-icons/fa';
+import { LuBus, LuHotel, LuSignpost, LuUser, LuUsers, LuUtensils, LuArrowRight } from 'react-icons/lu';
+import Button from './ui/Button.jsx';
+
+const CATEGORIES = [
+  {
+    key: 'personal',
+    title: 'Personal tours',
+    subtitle: 'Designed around you',
+    route: '/packages?type=PERSONAL',
+    cta: 'Customise a tour',
+    icon: LuUser,
+    accent: 'text-brand bg-brand/10',
+    features: [
+      { icon: LuUser, text: 'Itinerary built around your interests' },
+      { icon: LuSignpost, text: 'Flexible dates and destinations' },
+      { icon: LuHotel, text: 'Choose your accommodation level' },
+      { icon: LuBus, text: 'Private or shared transport' },
+    ],
+  },
+  {
+    key: 'group',
+    title: 'Group tours',
+    subtitle: 'Travel with fellow guests',
+    route: '/packages?type=GROUP',
+    cta: 'Browse group departures',
+    icon: LuUsers,
+    accent: 'text-info bg-info/10',
+    features: [
+      { icon: LuUsers, text: 'Fixed schedule, set price' },
+      { icon: LuHotel, text: 'Hotels and resorts arranged for you' },
+      { icon: LuBus, text: 'Group transport included' },
+      { icon: LuUtensils, text: 'Meals and activities as listed' },
+    ],
+  },
+];
 
 const TourCategories = () => {
   const navigate = useNavigate();
-  
-  const personalFeatures = [
-    { icon: <FaUser />, text: 'Custom itineraries tailored to you' },
-    { icon: <FaMapSigns />, text: 'Flexible dates and destinations' },
-    { icon: <FaHotel />, text: 'Choose your accommodation tier' },
-    { icon: <FaBus />, text: 'Private or shared transport options' },
-  ];
-
-  const groupFeatures = [
-    { icon: <FaUsers />, text: 'Fixed schedule, all-inclusive' },
-    { icon: <FaHotel />, text: 'Pre-booked hotels and resorts' },
-    { icon: <FaBus />, text: 'Group transport included' },
-    { icon: <FaUtensils />, text: 'All meals and activities covered' },
-  ];
 
   return (
-    <div className="w-full bg-transparent backdrop-blur-sm dark:bg-gray-900/60 relative">
-      <div className="absolute inset-0 pointer-events-none z-0 bg-gradient-to-r from-orange-50/15 via-yellow-50/6 to-amber-50/12"></div>
-      <section id="packages" className="section-container bg-transparent py-12 lg:py-16 relative z-10">
-      <h2 className="section-title dark:text-white animate-fade-in-up">Tour Categories</h2>
-      <p className="section-subtitle dark:text-gray-300 animate-fade-in-up" style={{animationDelay: '0.1s'}}>
-        Choose between personalized tours or all-inclusive group packages
-      </p>
+    <section id="packages" aria-labelledby="categories-heading" className="mesh-bg py-16 lg:py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <header className="mx-auto mb-12 max-w-2xl text-center">
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand">Tours</p>
+          <h2 id="categories-heading" className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">Choose how you want to travel</h2>
+          <p className="mt-3 text-base text-text-muted">Build your own itinerary, or join a group that has already been planned.</p>
+        </header>
 
-      {/* Personal vs Group */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-        {/* Personal Tours */}
-        <div className="bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-8 rounded-2xl shadow-xl border-2 border-primary hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105 animate-fade-in-left">
-          <div className="text-center mb-6">
-            <FaUser className="text-6xl text-primary mx-auto mb-4 animate-float" />
-            <h3 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Personal Tours</h3>
-            <p className="text-gray-600 dark:text-gray-300">Designed just for you</p>
-          </div>
-          <ul className="space-y-4">
-            {personalFeatures.map((feature, index) => (
-              <li key={index} className="flex items-start gap-3 text-gray-700 dark:text-gray-300 transform hover:translate-x-2 transition-transform duration-300">
-                <span className="text-primary text-xl mt-1">{feature.icon}</span>
-                <span className="text-lg">{feature.text}</span>
-              </li>
-            ))}
-          </ul>
-          <button 
-            onClick={() => navigate('/packages?type=PERSONAL')}
-            className="w-full btn-primary mt-6 transform hover:scale-105 transition-all duration-300"
-          >
-            Customize Your Tour
-          </button>
-        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {CATEGORIES.map(category => {
+            const Icon = category.icon;
+            return (
+              <article key={category.key} className="flex flex-col rounded-2xl glass p-6 shadow-sm sm:p-8">
+                <div className="flex items-center gap-4">
+                  <span className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl ${category.accent}`}>
+                    <Icon aria-hidden="true" className="h-7 w-7" />
+                  </span>
+                  <div>
+                    <h3 className="font-display text-2xl font-bold text-text">{category.title}</h3>
+                    <p className="text-sm text-text-muted">{category.subtitle}</p>
+                  </div>
+                </div>
 
-        {/* Group Tours */}
-        <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-8 rounded-2xl shadow-xl border-2 border-secondary hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105 animate-fade-in-right">
-          <div className="text-center mb-6">
-            <FaUsers className="text-6xl text-secondary mx-auto mb-4 animate-float" style={{animationDelay: '1s'}} />
-            <h3 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Group Tours</h3>
-            <p className="text-gray-600 dark:text-gray-300">Join fellow travelers</p>
-          </div>
-          <ul className="space-y-4">
-            {groupFeatures.map((feature, index) => (
-              <li key={index} className="flex items-start gap-3 text-gray-700 dark:text-gray-300 transform hover:translate-x-2 transition-transform duration-300">
-                <span className="text-secondary text-xl mt-1">{feature.icon}</span>
-                <span className="text-lg">{feature.text}</span>
-              </li>
-            ))}
-          </ul>
-          <button 
-            onClick={() => navigate('/packages?type=GROUP')}
-            className="w-full bg-secondary text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-all duration-300 shadow-lg mt-6 transform hover:scale-105"
-          >
-            Browse Group Packages
-          </button>
+                <ul className="my-6 grid gap-3 sm:grid-cols-2">
+                  {category.features.map(feature => {
+                    const FeatureIcon = feature.icon;
+                    return (
+                      <li key={feature.text} className="flex items-start gap-3 text-sm text-text">
+                        <FeatureIcon aria-hidden="true" className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand" />
+                        <span>{feature.text}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="mt-auto">
+                  <Button className="w-full" onClick={() => navigate(category.route)} icon={LuArrowRight}>
+                    {category.cta}
+                  </Button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
-      </section>
-    </div>
+    </section>
   );
 };
 

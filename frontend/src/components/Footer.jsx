@@ -1,133 +1,83 @@
 import React from 'react';
-import { FaFacebook, FaInstagram, FaTwitter, FaYoutube, FaLinkedin } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
+import { LuArrowUp, LuMail } from 'react-icons/lu';
+
+// Every link here goes somewhere that exists: sections on this page, the browse route, or an address.
+const EXPLORE = [
+  { label: 'Home', href: '#home' },
+  { label: 'About TripBloom', href: '#about' },
+  { label: 'Tour categories', href: '#packages' },
+  { label: 'Popular destinations', href: '#destinations' },
+  { label: 'Browse all packages', to: '/browse-packages' },
+];
+
+const SUPPORT = [
+  { label: 'Contact us', href: '#contact' },
+  { label: 'Email support@tripbloom.com', href: 'mailto:support@tripbloom.com', icon: LuMail },
+];
+
+const linkClass = 'inline-flex items-center gap-2 text-sm text-text-muted transition-colors hover:text-brand focus-visible:text-brand';
+
+function FooterLink({ link }) {
+  const Icon = link.icon;
+  const content = (
+    <>
+      {Icon && <Icon aria-hidden="true" className="h-4 w-4 flex-shrink-0" />}
+      <span>{link.label}</span>
+    </>
+  );
+  if (link.to) return <Link to={link.to} className={linkClass}>{content}</Link>;
+  return <a href={link.href} className={linkClass}>{content}</a>;
+}
 
 const Footer = () => {
-  const currentYear = new Date().getFullYear();
+  const year = new Date().getFullYear();
 
-  const quickLinks = [
-    { name: 'Home', href: '#home' },
-    { name: 'About Us', href: '#about' },
-    { name: 'Packages', href: '#packages' },
-    { name: 'Destinations', href: '#destinations' },
-    { name: 'Contact', href: '#contact' }
-  ];
-
-  const supportLinks = [
-    { name: 'FAQs', href: '#' },
-    { name: 'Help Center', href: '#' },
-    { name: 'Terms & Conditions', href: '#' },
-    { name: 'Privacy Policy', href: '#' },
-    { name: 'Refund Policy', href: '#' }
-  ];
-
-  const partnerLinks = [
-    { name: 'Become a Partner', href: '#' },
-    { name: 'Tour Operators', href: '#' },
-    { name: 'Travel Agents', href: '#' },
-    { name: 'Affiliates', href: '#' }
-  ];
+  const backToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   return (
-    <footer className="bg-gray-900 text-white pt-16 pb-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Main Footer Content */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
-          {/* Brand */}
+    <footer className="px-4 pb-8 pt-16 sm:px-6 lg:px-8">
+      <div className="glass mx-auto max-w-7xl rounded-2xl p-8 sm:p-10">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-3">
           <div>
-            <div className="flex items-center space-x-2 mb-4">
-              <img src="/tripbloom_logo.svg" alt="TripBloom Logo" className="w-14 h-14" />
-              <h3 className="font-display text-3xl font-bold text-primary">
-                TripBloom
-              </h3>
+            <div className="flex items-center gap-3">
+              <img src="/tripbloom_logo.svg" alt="" className="h-12 w-12" />
+              <p className="font-display text-2xl font-bold text-brand">TripBloom</p>
             </div>
-            <p className="text-gray-400 mb-4">
-              Where Every Journey Blossoms
-            </p>
-            <p className="text-gray-400 text-sm">
-              Making travel accessible, safe, and memorable for everyone.
+            <p className="mt-4 font-medium text-text">Where every journey blossoms.</p>
+            <p className="mt-2 max-w-xs text-sm leading-relaxed text-text-muted">
+              Personal and group tours, with every payment recorded and every change explained.
             </p>
           </div>
 
-          {/* Quick Links */}
-          <div>
-            <h4 className="font-bold text-lg mb-4">Quick Links</h4>
-            <ul className="space-y-2">
-              {quickLinks.map((link) => (
-                <li key={link.name}>
-                  <a
-                    href={link.href}
-                    className="text-gray-400 hover:text-primary transition-colors duration-300"
-                  >
-                    {link.name}
-                  </a>
-                </li>
-              ))}
+          <nav aria-label="Explore">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-text">Explore</h2>
+            <ul className="mt-4 space-y-3">
+              {EXPLORE.map(link => <li key={link.label}><FooterLink link={link} /></li>)}
             </ul>
-          </div>
+          </nav>
 
-          {/* Support */}
-          <div>
-            <h4 className="font-bold text-lg mb-4">Support</h4>
-            <ul className="space-y-2">
-              {supportLinks.map((link) => (
-                <li key={link.name}>
-                  <a
-                    href={link.href}
-                    className="text-gray-400 hover:text-primary transition-colors duration-300"
-                  >
-                    {link.name}
-                  </a>
-                </li>
-              ))}
+          <nav aria-label="Support">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-text">Support</h2>
+            <ul className="mt-4 space-y-3">
+              {SUPPORT.map(link => <li key={link.label}><FooterLink link={link} /></li>)}
             </ul>
-          </div>
-
-          {/* Partners */}
-          <div>
-            <h4 className="font-bold text-lg mb-4">For Partners</h4>
-            <ul className="space-y-2">
-              {partnerLinks.map((link) => (
-                <li key={link.name}>
-                  <a
-                    href={link.href}
-                    className="text-gray-400 hover:text-primary transition-colors duration-300"
-                  >
-                    {link.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+          </nav>
         </div>
 
-        {/* Social Media & Copyright */}
-        <div className="border-t border-gray-800 pt-8">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            {/* Social Icons */}
-            <div className="flex gap-6">
-              <a href="#" className="text-gray-400 hover:text-blue-500 transition-colors text-2xl">
-                <FaFacebook />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-pink-500 transition-colors text-2xl">
-                <FaInstagram />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors text-2xl">
-                <FaTwitter />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-red-500 transition-colors text-2xl">
-                <FaYoutube />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-blue-600 transition-colors text-2xl">
-                <FaLinkedin />
-              </a>
-            </div>
-
-            {/* Copyright */}
-            <div className="text-gray-400 text-sm text-center">
-              <p>© {currentYear} TripBloom. All rights reserved.</p>
-              <p className="mt-1">Powered by Best CSE University's student</p>
-            </div>
+        <div className="mt-10 flex flex-col-reverse items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
+          <div className="text-center text-xs text-text-muted sm:text-left">
+            <p>© {year} TripBloom. All rights reserved.</p>
+            <p className="mt-1">Powered by Best CSE University's student</p>
           </div>
+          <button
+            type="button"
+            onClick={backToTop}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 text-sm font-medium text-text transition-colors hover:bg-white/10"
+          >
+            <LuArrowUp aria-hidden="true" className="h-4 w-4" />
+            Back to top
+          </button>
         </div>
       </div>
     </footer>

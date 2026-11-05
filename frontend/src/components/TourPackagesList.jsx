@@ -1,7 +1,9 @@
+import { LuCalendarCheck, LuCircleAlert, LuEye, LuPackage, LuPencil, LuPlus, LuSearch, LuStar, LuToggleLeft, LuToggleRight } from 'react-icons/lu';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaBox, FaPlus, FaEye, FaEdit, FaToggleOn, FaToggleOff, FaSearch, FaStar, FaExclamationCircle, FaCalendarCheck } from 'react-icons/fa';
+
 import PackageEditModal from './PackageEditModal';
+import { thClass, tdClass } from './admin/AdminPrimitives.jsx';
 
 const TourPackagesList = ({ onViewDetails }) => {
   const [packages, setPackages] = useState([]);
@@ -26,20 +28,25 @@ const TourPackagesList = ({ onViewDetails }) => {
       const packagesWithData = await Promise.all(
         (res.data.packages || []).map(async (pkg) => {
           try {
-            // Get bookings count (fallback to 0 if endpoint doesn't exist)
-            let bookingsCount = 0;
+            // Bookings for this package; null when the request fails so the table shows a dash instead of a guess
+            let bookingsCount = null;
             try {
               const bookingsRes = await axios.get('/api/bookings', {
                 params: { packageId: pkg._id }
               });
               bookingsCount = bookingsRes.data.bookings?.length || 0;
             } catch (bookingsErr) {
-              // Bookings endpoint not available yet
-              bookingsCount = Math.floor(Math.random() * 50); // Mock data for demo
+              bookingsCount = null;
             }
 
-            // Get average rating (mock for now)
-            const avgRating = (Math.random() * 2 + 3).toFixed(1); // Random 3.0-5.0
+            // Average rating from approved reviews; null when there are none or the request fails
+            let avgRating = null;
+            try {
+              const ratingRes = await axios.get(`/api/packages/${pkg._id}/rating-stats`);
+              avgRating = ratingRes.data.stats?.totalReviews ? ratingRes.data.stats.averageRating : null;
+            } catch (ratingErr) {
+              avgRating = null;
+            }
 
             // Get upcoming group departures if GROUP type
             let upcomingDepartures = 0;
@@ -63,15 +70,15 @@ const TourPackagesList = ({ onViewDetails }) => {
             return {
               ...pkg,
               bookingsCount,
-              avgRating: parseFloat(avgRating),
+              avgRating,
               upcomingDepartures
             };
           } catch (err) {
             console.error('Failed to fetch package data:', err);
             return {
               ...pkg,
-              bookingsCount: 0,
-              avgRating: 0,
+              bookingsCount: null,
+              avgRating: null,
               upcomingDepartures: 0
             };
           }
@@ -108,26 +115,26 @@ const TourPackagesList = ({ onViewDetails }) => {
 
   const getTypeColor = (type) => {
     return type === 'GROUP' 
-      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
-      : 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400';
+      ? 'bg-info/10 text-info'
+      : 'bg-info/10 text-info';
   };
 
   const getCategoryColor = (category) => {
     const colors = {
-      SILVER: 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400',
-      GOLD: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-      PLATINUM: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400',
-      DIAMOND: 'bg-pink-100 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400'
+      SILVER: 'bg-surface-muted text-text',
+      GOLD: 'bg-warning/10 text-warning',
+      PLATINUM: 'bg-info/10 text-info',
+      DIAMOND: 'bg-danger/10 text-danger'
     };
-    return colors[category] || 'bg-gray-100 text-gray-700';
+    return colors[category] || 'bg-surface-muted text-text';
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+    <div className="bg-surface rounded-2xl shadow-lg p-6 border border-border">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-          <FaBox className="mr-3 text-primary" />
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-text flex items-center">
+          <LuPackage aria-hidden="true" className="mr-3 text-brand" />
           Tour Packages
         </h2>
         <button 
@@ -135,9 +142,9 @@ const TourPackagesList = ({ onViewDetails }) => {
             setSelectedPackage(null);
             setShowEditModal(true);
           }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors"
+          className="flex items-center space-x-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-on-brand shadow-sm transition-opacity hover:opacity-90"
         >
-          <FaPlus />
+          <LuPlus aria-hidden="true" />
           <span>Create Package</span>
         </button>
       </div>
@@ -145,19 +152,19 @@ const TourPackagesList = ({ onViewDetails }) => {
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="relative">
-          <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          <LuSearch aria-hidden="true" className="absolute left-3 top-3 text-text-muted" />
           <input
             type="text"
             placeholder="Search packages..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
+            className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-surface text-text focus:ring-2 focus:ring-brand"
           />
         </div>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Types</option>
           <option value="GROUP">Group Tours</option>
@@ -166,7 +173,7 @@ const TourPackagesList = ({ onViewDetails }) => {
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
           disabled={typeFilter === 'GROUP'}
         >
           <option value="all">All Categories</option>
@@ -178,7 +185,7 @@ const TourPackagesList = ({ onViewDetails }) => {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Status</option>
           <option value="active">Active Only</option>
@@ -190,15 +197,15 @@ const TourPackagesList = ({ onViewDetails }) => {
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-              <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Title</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Type</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Category</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Base Price</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Status</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Rating</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Bookings</th>
-              <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+            <tr className="border-b-2 border-border">
+              <th className={thClass}>Title</th>
+              <th className={thClass}>Type</th>
+              <th className={thClass}>Category</th>
+              <th className={thClass}>Base Price</th>
+              <th className={thClass}>Status</th>
+              <th className={thClass}>Rating</th>
+              <th className={thClass}>Bookings</th>
+              <th className={thClass}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -208,95 +215,95 @@ const TourPackagesList = ({ onViewDetails }) => {
               return (
                 <tr
                   key={pkg._id}
-                  className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="border-b border-border hover:bg-surface-muted transition-colors"
                 >
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div>
-                      <div className="font-semibold text-gray-900 dark:text-white mb-1">
+                      <div className="font-semibold text-text mb-1">
                         {pkg.title}
                       </div>
                       {hasUpcomingDepartures && (
-                        <div className="flex items-center text-xs text-blue-600 dark:text-blue-400">
-                          <FaCalendarCheck className="mr-1" />
+                        <div className="flex items-center text-xs text-info">
+                          <LuCalendarCheck aria-hidden="true" className="mr-1" />
                           <span>{pkg.upcomingDepartures} upcoming departure{pkg.upcomingDepartures > 1 ? 's' : ''}</span>
                         </div>
                       )}
                     </div>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getTypeColor(pkg.type)}`}>
                       {pkg.type}
                     </span>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     {pkg.category ? (
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getCategoryColor(pkg.category)}`}>
                         {pkg.category}
                       </span>
                     ) : (
-                      <span className="text-gray-400 dark:text-gray-500 text-sm">N/A</span>
+                      <span className="text-text-muted text-sm">N/A</span>
                     )}
                   </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      ${pkg.basePrice?.toLocaleString()}
+                  <td className={tdClass}>
+                    <span className="font-semibold text-text">
+                      BDT {pkg.basePrice?.toLocaleString()}
                     </span>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <button
                       onClick={() => togglePackageStatus(pkg._id, pkg.isActive)}
                       className={`flex items-center justify-center mx-auto px-3 py-1 rounded-full text-sm font-semibold transition-colors ${
                         pkg.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                          : 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-surface-muted text-text'
                       }`}
                       title={hasUpcomingDepartures && pkg.isActive ? 'Warning: Has upcoming departures' : ''}
                     >
                       {pkg.isActive ? (
                         <>
-                          <FaToggleOn className="mr-1" /> Active
+                          <LuToggleRight aria-hidden="true" className="mr-1" /> Active
                         </>
                       ) : (
                         <>
-                          <FaToggleOff className="mr-1" /> Inactive
+                          <LuToggleLeft aria-hidden="true" className="mr-1" /> Inactive
                         </>
                       )}
                       {hasUpcomingDepartures && pkg.isActive && (
-                        <FaExclamationCircle className="ml-1 text-orange-500" />
+                        <LuCircleAlert aria-hidden="true" className="ml-1 text-warning" />
                       )}
                     </button>
                   </td>
-                  <td className="py-4 px-4 text-center">
+                  <td className={tdClass}>
                     <div className="flex items-center justify-center space-x-1">
-                      <FaStar className="text-yellow-500" />
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        {pkg.avgRating}
+                      <LuStar aria-hidden="true" className="text-warning" />
+                      <span className="font-semibold text-text">
+                        {pkg.avgRating ?? '—'}
                       </span>
                     </div>
                   </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-full font-semibold">
-                      {pkg.bookingsCount}
+                  <td className={tdClass}>
+                    <span className="inline-flex items-center justify-center w-8 h-8 bg-info/10 text-info rounded-full font-semibold">
+                      {pkg.bookingsCount ?? '—'}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className={tdClass}>
                     <div className="flex items-center justify-center space-x-2">
                       <button
                         onClick={() => onViewDetails && onViewDetails(pkg)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                        className="p-2 text-info hover:bg-info/10 rounded transition-colors"
                         title="View Details"
                       >
-                        <FaEye />
+                        <LuEye aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => {
                           setSelectedPackage(pkg);
                           setShowEditModal(true);
                         }}
-                        className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                        className="p-2 text-success hover:bg-success/10 rounded transition-colors"
                         title="Edit"
                       >
-                        <FaEdit />
+                        <LuPencil aria-hidden="true" />
                       </button>
                     </div>
                   </td>
@@ -307,7 +314,7 @@ const TourPackagesList = ({ onViewDetails }) => {
         </table>
 
         {filteredPackages.length === 0 && !loading && (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <div className="text-center py-12 text-text-muted">
             {searchTerm || typeFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all' 
               ? 'No packages match your filters' 
               : 'No packages found'}
@@ -316,31 +323,31 @@ const TourPackagesList = ({ onViewDetails }) => {
       </div>
 
       {loading && (
-        <div className="text-center py-8 text-primary font-semibold">Loading...</div>
+        <div className="text-center py-8 text-brand font-semibold">Loading...</div>
       )}
 
       {/* Stats Summary */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg">
-          <div className="text-sm text-blue-600 dark:text-blue-400 font-semibold">Total Packages</div>
-          <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{packages.length}</div>
+        <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+          <div className="text-sm text-info font-semibold">Total Packages</div>
+          <div className="text-2xl font-bold text-info">{packages.length}</div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg">
-          <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold">Group Tours</div>
-          <div className="text-2xl font-bold text-purple-900 dark:text-purple-300">
+        <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+          <div className="text-sm text-info font-semibold">Group Tours</div>
+          <div className="text-2xl font-bold text-info">
             {packages.filter(p => p.type === 'GROUP').length}
           </div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg">
-          <div className="text-sm text-green-600 dark:text-green-400 font-semibold">Active Packages</div>
-          <div className="text-2xl font-bold text-green-900 dark:text-green-300">
+        <div className="p-4 bg-gradient-to-br from-success/10 to-success/5 rounded-lg">
+          <div className="text-sm text-success font-semibold">Active Packages</div>
+          <div className="text-2xl font-bold text-success">
             {packages.filter(p => p.isActive).length}
           </div>
         </div>
-        <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg">
-          <div className="text-sm text-orange-600 dark:text-orange-400 font-semibold">Total Bookings</div>
-          <div className="text-2xl font-bold text-orange-900 dark:text-orange-300">
-            {packages.reduce((sum, p) => sum + p.bookingsCount, 0)}
+        <div className="p-4 bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg">
+          <div className="text-sm text-warning font-semibold">Total Bookings</div>
+          <div className="text-2xl font-bold text-warning">
+            {packages.reduce((sum, p) => sum + (p.bookingsCount || 0), 0)}
           </div>
         </div>
       </div>

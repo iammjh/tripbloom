@@ -4,6 +4,7 @@ import {
   updateTourPackage,
   setTourPackageActive,
   getTourPackage,
+  getPublicTourPackage,
   listTourPackages,
   searchTourPackages,
   deleteTourPackage
@@ -17,9 +18,14 @@ import {
 } from '../service/tourPackage.service.js';
 
 export async function createTourPackageController(req, res) {
-  const result = await createTourPackage(req.body);
-  if (result.error) return res.status(400).json({ success: false, message: result.error });
-  res.json({ success: true, message: 'Package created successfully.', package: result.package });
+  try {
+    const result = await createTourPackage(req.body);
+    if (result.error) return res.status(400).json({ success: false, message: result.error });
+    res.json({ success: true, message: 'Package created successfully.', package: result.package });
+  } catch (error) {
+    res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500)
+      .json({ success: false, message: 'Unable to create the package. Please try again.' });
+  }
 }
 
 export async function updateTourPackageController(req, res) {
@@ -43,6 +49,16 @@ export async function getTourPackageController(req, res) {
   const pkg = await getTourPackage(packageId);
   if (!pkg) return res.status(404).json({ success: false, message: 'Package not found.' });
   res.json({ success: true, message: 'Package fetched successfully.', package: pkg });
+}
+
+export async function getPublicTourPackageController(req, res) {
+  try {
+    const result = await getPublicTourPackage(req.params.packageId);
+    if (result.error) return res.status(result.status).json({ success: false, message: result.error });
+    res.json({ success: true, package: result.package });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to load tour package.' });
+  }
 }
 
 export async function listTourPackagesController(req, res) {

@@ -1,14 +1,216 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { FaSearch, FaFilter, FaStar, FaClock, FaDollarSign, FaMapMarkerAlt, FaUsers, FaUser, FaHeart, FaRegHeart, FaCalendarCheck } from 'react-icons/fa';
+import { LuCalendarCheck, LuClock, LuHeart, LuMapPin, LuSearch, LuUser, LuUsers } from 'react-icons/lu';
+
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import IconButton from './ui/IconButton.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import { inputClass } from './ui/FormField.jsx';
+import { BackIcon, PlaneIcon } from './ui/icons.js';
 import TourDetailModal from './TourDetailModal';
+import { getAvailableDepartures } from '../api/catalog';
+
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=400&fit=crop';
+
+// Destination keyword -> photo. The first key found in the destination name wins.
+const IMAGE_BY_PLACE = {
+  bangladesh: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=400&fit=crop',
+  cox: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop',
+  sundarbans: 'https://images.unsplash.com/photo-1511497584788-876760111969?w=800&h=400&fit=crop',
+  sylhet: 'https://images.unsplash.com/photo-1563622797-cc703a4b2921?w=800&h=400&fit=crop',
+  bandarban: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=400&fit=crop',
+  rangamati: 'https://images.unsplash.com/photo-1540202404-a2f29016b523?w=800&h=400&fit=crop',
+  'saint martin': 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop',
+  dubai: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&h=400&fit=crop',
+  thailand: 'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?w=800&h=400&fit=crop',
+  malaysia: 'https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&h=400&fit=crop',
+  maldives: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=800&h=400&fit=crop',
+  nepal: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&h=400&fit=crop',
+  singapore: 'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?w=800&h=400&fit=crop',
+  turkey: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&h=400&fit=crop',
+  bhutan: 'https://images.unsplash.com/photo-1609137144813-7d9921338f24?w=800&h=400&fit=crop',
+};
+
+const TYPE_TABS = [
+  { value: '', label: 'All' },
+  { value: 'PERSONAL', label: 'Personal' },
+  { value: 'GROUP', label: 'Group' },
+];
+
+// Copy for each page. Keys match the type filter values.
+const HEADINGS = {
+  '': {
+    eyebrow: 'All packages',
+    title: 'Browse tour packages',
+    description: 'Personal and group tours from TripBloom, in one place.',
+  },
+  PERSONAL: {
+    eyebrow: 'Personal tours',
+    title: 'Plan a tour around you',
+    description: 'Private itineraries for your own group of travellers. Customise the plan before you book.',
+  },
+  GROUP: {
+    eyebrow: 'Group tours',
+    title: 'Join a scheduled departure',
+    description: 'Fixed departure dates with a set group. Pick a date and check how many seats are left.',
+  },
+};
+
+const PILL = 'inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-white/20 backdrop-blur';
+
+// Same icon as LuHeart, filled, shown on saved packages.
+const FilledHeart = (props) => <LuHeart {...props} fill="currentColor" />;
+
+function packageImage(pkg) {
+  if (pkg.photos?.length > 0) return pkg.photos[0];
+  const firstDest = pkg.destinations?.[0];
+  if (!firstDest) return FALLBACK_IMAGE;
+  const place = (firstDest.country || firstDest.city || firstDest.name || '').toLowerCase();
+  const match = Object.keys(IMAGE_BY_PLACE).find((key) => place.includes(key));
+  return match ? IMAGE_BY_PLACE[match] : FALLBACK_IMAGE;
+}
+
+function formatDestinations(destinations) {
+  if (!destinations || destinations.length === 0) return 'Various locations';
+  return destinations
+    .map((d) => d.name || d.city || d.country)
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ') + (destinations.length > 3 ? '...' : '');
+}
+
+function formatDepartureDate(dateString) {
+  return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Photo that swaps to a branded field if the image cannot load.
+function PackageImage({ pkg, className = '' }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <div aria-hidden="true" className={`bg-gradient-to-br from-brand-strong via-surface to-info/40 ${className}`} />;
+  }
+  return (
+    <img
+      src={packageImage(pkg)}
+      alt={pkg.title}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`object-cover ${className}`}
+    />
+  );
+}
+
+function DepartureList({ departures }) {
+  if (!departures || departures.length === 0) {
+    return (
+      <p className="mb-5 rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-muted">
+        No upcoming departures scheduled yet. Contact us for custom dates.
+      </p>
+    );
+  }
+  const shown = departures.slice(0, 3);
+  const more = departures.length - shown.length;
+  return (
+    <div className="mb-5 rounded-lg border border-border bg-surface-muted p-3">
+      <p className="flex items-center gap-2 text-sm font-semibold text-text">
+        <LuCalendarCheck aria-hidden="true" className="h-4 w-4 text-brand" />
+        Upcoming departures
+      </p>
+      <ul className="mt-2 divide-y divide-border">
+        {shown.map((dep) => {
+          const seatsLeft = dep.totalSeats - dep.bookedSeats;
+          const isFull = seatsLeft <= 0;
+          const tone = isFull ? 'text-danger' : seatsLeft <= 5 ? 'text-warning' : 'text-success';
+          return (
+            <li key={dep._id} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span className="min-w-0 text-text">
+                {formatDepartureDate(dep.startDate)}
+                {dep.endDate && <span className="text-text-muted"> to {formatDepartureDate(dep.endDate)}</span>}
+              </span>
+              <span className={`shrink-0 font-semibold ${tone}`}>{isFull ? 'Full' : `${seatsLeft} seats left`}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {more > 0 && (
+        <p className="mt-2 text-xs font-semibold text-brand">+{more} more departure{more > 1 ? 's' : ''}</p>
+      )}
+    </div>
+  );
+}
+
+function PackageCard({ pkg, departures, saved, onView, onToggleSave }) {
+  const isGroup = pkg.type === 'GROUP';
+  return (
+    <article
+      onClick={() => onView(pkg)}
+      className="glass flex cursor-pointer flex-col overflow-hidden rounded-2xl transition duration-200 hover:-translate-y-1 hover:shadow-2xl"
+    >
+      <div className="relative h-44 overflow-hidden bg-surface-muted">
+        <PackageImage pkg={pkg} className="h-full w-full transition-transform duration-300 hover:scale-105" />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+          <span className={PILL}>
+            {isGroup ? <LuUsers aria-hidden="true" className="h-3.5 w-3.5" /> : <LuUser aria-hidden="true" className="h-3.5 w-3.5" />}
+            {isGroup ? 'Group' : 'Personal'}
+          </span>
+          {pkg.isInternational && (
+            <span className={PILL}>
+              <PlaneIcon aria-hidden="true" className="h-3.5 w-3.5" />
+              International
+            </span>
+          )}
+          {pkg.category && <span className={PILL}>{pkg.category}</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col p-5">
+        <h3 className="text-lg font-semibold text-text">{pkg.title}</h3>
+        {pkg.description && <p className="mt-2 line-clamp-2 text-sm text-text-muted">{pkg.description}</p>}
+
+        <ul className="mb-5 mt-4 space-y-2 text-sm text-text-muted">
+          {pkg.destinations?.length > 0 && (
+            <li className="flex items-center gap-2">
+              <LuMapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-brand" />
+              <span className="truncate">{formatDestinations(pkg.destinations)}</span>
+            </li>
+          )}
+          <li className="flex items-center gap-2">
+            <LuClock aria-hidden="true" className="h-4 w-4 shrink-0 text-brand" />
+            <span>{pkg.defaultDays} Days / {pkg.defaultNights} Nights</span>
+          </li>
+        </ul>
+
+        {isGroup && <DepartureList departures={departures} />}
+
+        <div className="mt-auto flex items-end justify-between gap-3 border-t border-border pt-5">
+          <div className="min-w-0">
+            <p className="text-xs text-text-muted">{isGroup ? 'Per person' : 'Starting from'}</p>
+            <p className="whitespace-nowrap font-display text-xl font-bold text-brand sm:text-2xl">BDT {Number(pkg.basePrice || 0).toLocaleString()}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              label={saved ? 'Remove from saved packages' : 'Save package'}
+              icon={saved ? FilledHeart : LuHeart}
+              variant={saved ? 'danger' : 'ghost'}
+              onClick={(e) => { e.stopPropagation(); onToggleSave(pkg); }}
+            />
+            <Button size="sm" onClick={(e) => { e.stopPropagation(); onView(pkg); }}>View Details</Button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
 
 const BrowsePackages = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [suggestedPackages, setSuggestedPackages] = useState([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -16,9 +218,7 @@ const BrowsePackages = () => {
   const [savedPackageIds, setSavedPackageIds] = useState(new Set());
   const [groupDepartures, setGroupDepartures] = useState({});
 
-  console.log('[BrowsePackages] Component rendered, searchParams:', Object.fromEntries(searchParams.entries()));
-
-  // Filters
+  // Filters. Price range is applied on Search, not on every keystroke.
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '');
   const [scopeFilter, setScopeFilter] = useState(searchParams.get('scope') || '');
@@ -26,19 +226,86 @@ const BrowsePackages = () => {
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
 
-  console.log('[BrowsePackages] Initial filters - searchTerm:', searchTerm, 'typeFilter:', typeFilter);
+  // Lets a slower earlier request finish without overwriting a newer result.
+  const requestRef = useRef(0);
 
-  // Scroll to top when component mounts
+  const currentFilters = () => ({
+    type: typeFilter,
+    scope: scopeFilter,
+    category: categoryFilter,
+    minPrice,
+    maxPrice,
+    search: searchTerm,
+  });
+
+  const loadGroupDepartures = async (pkgs) => {
+    const departuresData = {};
+    const groupPackages = pkgs.filter((pkg) => pkg.type === 'GROUP');
+    await Promise.all(
+      groupPackages.map(async (pkg) => {
+        try {
+          const departures = await getAvailableDepartures(pkg._id);
+          const upcoming = (departures || [])
+            .filter((dep) => new Date(dep.startDate) > new Date())
+            .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+          if (upcoming.length > 0) departuresData[pkg._id] = upcoming;
+        } catch (err) {
+          console.error(`Failed to fetch departures for package ${pkg._id}:`, err);
+        }
+      })
+    );
+    return departuresData;
+  };
+
+  const runSearch = async (filters) => {
+    const requestId = ++requestRef.current;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const params = {};
+      if (filters.type) params.type = filters.type;
+      if (filters.scope) params.scope = filters.scope;
+      if (filters.category) params.category = filters.category;
+      if (filters.minPrice) params.minPrice = filters.minPrice;
+      if (filters.maxPrice) params.maxPrice = filters.maxPrice;
+      if (filters.search) params.search = filters.search;
+
+      const response = await axios.get('/api/packages/search', { params });
+      if (requestId !== requestRef.current) return;
+      if (!response.data?.success) throw new Error('Package search returned no results');
+
+      const found = response.data.packages || [];
+      const departures = await loadGroupDepartures(found);
+      if (requestId !== requestRef.current) return;
+      setPackages(found);
+      setGroupDepartures(departures);
+    } catch (error) {
+      if (requestId !== requestRef.current) return;
+      console.error('[BrowsePackages] Failed to fetch packages:', error);
+      setPackages([]);
+      setGroupDepartures({});
+      setLoadError(true);
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  };
+
+  // Scroll to top when the page opens.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
-  // Fetch packages when filters change or on initial load
+  // Re-run the search when a filter that is applied immediately changes.
   useEffect(() => {
-    fetchPackages();
+    runSearch(currentFilters());
   }, [typeFilter, categoryFilter, searchTerm, scopeFilter]);
 
-  // Load saved packages for logged-in customer
+  // Follow the ?type= link when the page is already open, for example from the navbar.
+  useEffect(() => {
+    setTypeFilter(searchParams.get('type') || '');
+  }, [searchParams]);
+
+  // Load saved packages for a logged-in customer.
   useEffect(() => {
     const loadSaved = async () => {
       try {
@@ -47,7 +314,7 @@ const BrowsePackages = () => {
         if (userRole === 'customer' && userId) {
           const res = await axios.get(`/api/users/${userId}/saved`);
           if (res.data && res.data.packages) {
-            setSavedPackageIds(new Set(res.data.packages.map(p => p._id)));
+            setSavedPackageIds(new Set(res.data.packages.map((p) => p._id)));
           }
         }
       } catch (err) {
@@ -57,15 +324,13 @@ const BrowsePackages = () => {
     loadSaved();
   }, []);
 
-  // When no packages are found, fetch popular destinations as alternatives
+  // When nothing matches, suggest other tours of the same type.
   useEffect(() => {
-    const fetchAlternatives = async () => {
-      if (loading) return;
-      if (packages.length > 0) return;
+    const fetchSuggestions = async () => {
+      if (loading || packages.length > 0) return;
       try {
         setLoadingSuggestions(true);
-        // Fetch active packages from backend as suggestions
-        const res = await axios.get('/api/packages/search');
+        const res = await axios.get('/api/packages/search', { params: typeFilter ? { type: typeFilter } : {} });
         if (res && res.data && Array.isArray(res.data.packages)) {
           setSuggestedPackages(res.data.packages.slice(0, 6));
         }
@@ -75,78 +340,30 @@ const BrowsePackages = () => {
         setLoadingSuggestions(false);
       }
     };
-
-    fetchAlternatives();
-  }, [loading, packages.length]);
-
-  const fetchPackages = async () => {
-    setLoading(true);
-    try {
-      const params = {};
-      if (typeFilter) params.type = typeFilter;
-      if (scopeFilter) params.scope = scopeFilter;
-      if (categoryFilter) params.category = categoryFilter;
-      if (minPrice) params.minPrice = minPrice;
-      if (maxPrice) params.maxPrice = maxPrice;
-      if (searchTerm) params.search = searchTerm;
-
-      console.log('[BrowsePackages] Fetching with params:', params);
-      const response = await axios.get('/api/packages/search', { params });
-      
-      console.log('[BrowsePackages] Response:', response.data);
-      if (response.data.success) {
-        setPackages(response.data.packages);
-        console.log('[BrowsePackages] Loaded packages:', response.data.packages.length);
-        
-        // Fetch upcoming departures for GROUP packages
-        await fetchGroupDepartures(response.data.packages);
-      }
-    } catch (error) {
-      console.error('[BrowsePackages] Failed to fetch packages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchGroupDepartures = async (pkgs) => {
-    const groupPackages = pkgs.filter(pkg => pkg.type === 'GROUP');
-    if (groupPackages.length === 0) return;
-
-    const departuresData = {};
-    
-    // Fetch departures for each GROUP package
-    await Promise.all(
-      groupPackages.map(async (pkg) => {
-        try {
-          const res = await axios.get('/api/admin/group-departures', {
-            params: { 
-              packageId: pkg._id,
-              status: 'OPEN'
-            }
-          });
-          
-          if (res.data.departures && res.data.departures.length > 0) {
-            // Filter future departures and sort by start date
-            const futureDepartures = res.data.departures
-              .filter(dep => new Date(dep.startDate) > new Date())
-              .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
-            
-            if (futureDepartures.length > 0) {
-              departuresData[pkg._id] = futureDepartures;
-            }
-          }
-        } catch (err) {
-          console.error(`Failed to fetch departures for package ${pkg._id}:`, err);
-        }
-      })
-    );
-    
-    setGroupDepartures(departuresData);
-  };
+    fetchSuggestions();
+  }, [loading, packages.length, typeFilter]);
 
   const handleSearch = (e) => {
     e.preventDefault();
-    fetchPackages();
+    runSearch(currentFilters());
+  };
+
+  const selectType = (value) => {
+    setTypeFilter(value);
+    if (value === 'GROUP') setCategoryFilter(''); // group departures have no category
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set('type', value);
+    else next.delete('type');
+    setSearchParams(next, { replace: true });
+  };
+
+  const clearFilters = () => {
+    setScopeFilter('');
+    setCategoryFilter('');
+    setMinPrice('');
+    setMaxPrice('');
+    setSearchTerm('');
+    runSearch({ type: typeFilter, scope: '', category: '', minPrice: '', maxPrice: '', search: '' });
   };
 
   const handleViewDetails = (pkg) => {
@@ -154,454 +371,227 @@ const BrowsePackages = () => {
     setShowModal(true);
   };
 
-  const clearFilters = () => {
-    setTypeFilter('');
-    setScopeFilter('');
-    setCategoryFilter('');
-    setMinPrice('');
-    setMaxPrice('');
-    setSearchTerm('');
-  };
-
-  // Helper function to get image for package based on destination
-  const getPackageImage = (pkg) => {
-    if (pkg.photos && pkg.photos.length > 0) {
-      return pkg.photos[0];
+  const toggleSaved = async (pkg) => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+      localStorage.setItem('afterLoginGoto', window.location.pathname);
+      window.dispatchEvent(new CustomEvent('openAuthModal'));
+      return;
     }
-    
-    // Get first destination for image selection
-    const firstDest = pkg.destinations?.[0];
-    if (!firstDest) {
-      return 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=400&fit=crop';
-    }
-    
-    const location = (firstDest.country || firstDest.city || firstDest.name || '').toLowerCase();
-    
-    // Map destinations to images
-    const imageMap = {
-      'bangladesh': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=400&fit=crop',
-      'cox': 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop',
-      'sundarbans': 'https://images.unsplash.com/photo-1511497584788-876760111969?w=800&h=400&fit=crop',
-      'sylhet': 'https://images.unsplash.com/photo-1563622797-cc703a4b2921?w=800&h=400&fit=crop',
-      'bandarban': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=400&fit=crop',
-      'rangamati': 'https://images.unsplash.com/photo-1540202404-a2f29016b523?w=800&h=400&fit=crop',
-      'saint martin': 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=400&fit=crop',
-      'dubai': 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&h=400&fit=crop',
-      'thailand': 'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?w=800&h=400&fit=crop',
-      'malaysia': 'https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&h=400&fit=crop',
-      'maldives': 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=800&h=400&fit=crop',
-      'nepal': 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800&h=400&fit=crop',
-      'singapore': 'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?w=800&h=400&fit=crop',
-      'turkey': 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&h=400&fit=crop',
-      'bhutan': 'https://images.unsplash.com/photo-1609137144813-7d9921338f24?w=800&h=400&fit=crop',
+    const pkgId = pkg._id;
+    const wasSaved = savedPackageIds.has(pkgId);
+    const apply = (next, id, saved) => {
+      const copy = new Set(next);
+      if (saved) copy.add(id); else copy.delete(id);
+      return copy;
     };
-    
-    for (const [key, image] of Object.entries(imageMap)) {
-      if (location.includes(key)) return image;
+    // Optimistic update, rolled back if the request fails.
+    setSavedPackageIds((prev) => apply(prev, pkgId, !wasSaved));
+    try {
+      if (wasSaved) await axios.delete(`/api/users/${userId}/save/${pkgId}`);
+      else await axios.post(`/api/users/${userId}/save/${pkgId}`);
+    } catch (err) {
+      setSavedPackageIds((prev) => apply(prev, pkgId, wasSaved));
+      console.error('Failed to toggle saved package', err);
     }
-    
-    return 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=400&fit=crop';
   };
 
-  // Format destinations for display
-  const formatDestinations = (destinations) => {
-    if (!destinations || destinations.length === 0) return 'Various locations';
-    return destinations
-      .map(d => d.name || d.city || d.country)
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(', ') + (destinations.length > 3 ? '...' : '');
-  };
-
-  // Format departure date for display
-  const formatDepartureDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
+  const heading = HEADINGS[typeFilter] || HEADINGS[''];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-primary via-green-500 to-emerald-500 text-white py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <button
-            onClick={() => navigate('/')}
-            className="mb-4 px-4 py-2 bg-white/20 backdrop-blur-md rounded-lg hover:bg-white/30 transition-colors"
-          >
-            ← Back to Home
-          </button>
-          <h1 className="text-4xl font-bold mb-4">Browse Tour Packages</h1>
-          <p className="text-xl text-green-100">Discover your next adventure</p>
-        </div>
-      </div>
+    <div className="dark mesh-bg min-h-screen text-text">
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <header className="mb-8">
+          <Button variant="ghost" size="sm" icon={BackIcon} onClick={() => navigate('/')} className="-ml-3 mb-3">
+            Back to home
+          </Button>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand">{heading.eyebrow}</p>
+          <h1 className="mt-2 font-display text-3xl font-bold text-text sm:text-4xl">{heading.title}</h1>
+          <p className="mt-3 max-w-2xl text-base text-text-muted">{heading.description}</p>
+        </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search and Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
-          <form onSubmit={handleSearch} className="space-y-4">
-            {/* Search Bar */}
-            <div className="relative">
-              <FaSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
+        <div role="group" aria-label="Tour type" className="glass mb-5 inline-flex max-w-full flex-wrap gap-1 rounded-full p-1">
+          {TYPE_TABS.map((tab) => {
+            const active = typeFilter === tab.value;
+            return (
+              <button
+                key={tab.label}
+                type="button"
+                aria-pressed={active}
+                onClick={() => selectType(tab.value)}
+                className={`min-h-[40px] rounded-full px-4 text-sm font-semibold transition-colors duration-150 ${
+                  active ? 'bg-brand text-on-brand' : 'text-text-muted hover:text-text'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <form onSubmit={handleSearch} aria-label="Search and filter tours" className="glass rounded-2xl p-4 sm:p-5">
+          <div className="flex flex-col gap-3 md:flex-row">
+            <div className="relative flex-1">
+              <LuSearch aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-text-muted" />
               <input
-                type="text"
-                placeholder="Search by destination, title, or keywords..."
+                type="search"
+                aria-label="Search tours"
+                placeholder="Search destination or title"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg"
+                className={`${inputClass} pl-10`}
+              />
+            </div>
+            <Button type="submit" icon={LuSearch} className="md:min-w-40">Search</Button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <select aria-label="Region" value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)} className={inputClass}>
+              <option value="">All regions</option>
+              <option value="DOMESTIC">Domestic</option>
+              <option value="INTERNATIONAL">International</option>
+            </select>
+
+            <select
+              aria-label="Category"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              disabled={typeFilter === 'GROUP'}
+              className={inputClass}
+            >
+              <option value="">All categories</option>
+              <option value="SILVER">Silver</option>
+              <option value="GOLD">Gold</option>
+              <option value="PLATINUM">Platinum</option>
+              <option value="DIAMOND">Diamond Elite</option>
+            </select>
+
+            <div className="relative">
+              <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-text-muted">BDT</span>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                aria-label="Minimum price in BDT"
+                placeholder="Min price"
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+                className={`${inputClass} pl-12`}
               />
             </div>
 
-            {/* Filters Row */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All Types</option>
-                  <option value="PERSONAL">Personal Tours</option>
-                  <option value="GROUP">Group Tours</option>
-                </select>
-
-                <select
-                  value={scopeFilter}
-                  onChange={(e) => setScopeFilter(e.target.value)}
-                  className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">All Regions</option>
-                  <option value="DOMESTIC">Domestic</option>
-                  <option value="INTERNATIONAL">International</option>
-                </select>
-
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  disabled={typeFilter === 'GROUP'}
-                >
-                  <option value="">All Categories</option>
-                  <option value="SILVER">Silver</option>
-                  <option value="GOLD">Gold</option>
-                  <option value="PLATINUM">Platinum</option>
-                  <option value="DIAMOND">Diamond Elite</option>
-                </select>
-
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-bold text-lg pointer-events-none z-10">
-                  $
-                </div>
-                <input
-                  type="number"
-                  placeholder="Min Price"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-300 group-hover:border-primary/50"
-                />
-              </div>
-
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-bold text-lg pointer-events-none z-10">
-                  $
-                </div>
-                <input
-                  type="number"
-                  placeholder="Max Price"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-300 group-hover:border-primary/50"
-                />
-              </div>
+            <div className="relative">
+              <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-text-muted">BDT</span>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                aria-label="Maximum price in BDT"
+                placeholder="Max price"
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+                className={`${inputClass} pl-12`}
+              />
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-4">
-              <button
-                type="submit"
-                className="flex-1 bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-              >
-                <FaSearch />
-                Search Packages
-              </button>
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Clear Filters
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Results Count */}
-        <div className="mb-6">
-          <p className="text-lg text-gray-700 dark:text-gray-300">
-            Found <span className="font-bold text-primary">{packages.length}</span> packages
-          </p>
-        </div>
-
-        {/* Loading */}
-        {loading && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading packages...</p>
+            <Button variant="secondary" onClick={clearFilters} className="col-span-2 lg:col-span-1">Clear filters</Button>
           </div>
-        )}
+        </form>
 
-        {/* Packages Grid */}
-        {!loading && packages.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {packages.map((pkg) => (
-              <div
-                key={pkg._id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
-                onClick={() => handleViewDetails(pkg)}
-              >
-                {/* Package Type Badge */}
-                <div className="relative">
-                  <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                      pkg.type === 'GROUP' 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' 
-                        : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                    }`}>
-                      {pkg.type === 'GROUP' ? <><FaUsers className="mr-1" /> Group</> : <><FaUser className="mr-1" /> Personal</>}
-                    </span>
-                    {pkg.isInternational && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                        ✈️ International
-                      </span>
-                    )}
-                  </div>
-                  {pkg.category && (
-                    <div className="absolute top-4 left-4 z-10">
-                      <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
-                        {pkg.category}
-                      </span>
-                    </div>
-                  )}
-                  {/* Package Image */}
-                  <div className="h-48 overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600">
-                    <img
-                      src={getPackageImage(pkg)}
-                      alt={pkg.title}
-                      className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=400&fit=crop';
-                      }}
-                    />
-                  </div>
-                </div>
+        <p role="status" aria-live="polite" className="mb-5 mt-6 text-sm text-text-muted">
+          {loading && 'Loading packages…'}
+          {!loading && loadError && 'Packages could not be shown.'}
+          {!loading && !loadError && (
+            <>Found <span className="font-semibold text-brand">{packages.length}</span> {packages.length === 1 ? 'package' : 'packages'}</>
+          )}
+        </p>
 
-                {/* Package Info */}
-                <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                    {pkg.title}
-                  </h3>
-                  
-                  <p className="text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-                    {pkg.description}
-                  </p>
-
-                  {/* Destinations */}
-                  {pkg.destinations && pkg.destinations.length > 0 && (
-                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      <FaMapMarkerAlt className="mr-2 text-primary" />
-                      <span className="line-clamp-1">{formatDestinations(pkg.destinations)}</span>
-                    </div>
-                  )}
-
-                  {/* Duration */}
-                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    <FaClock className="mr-2 text-primary" />
-                    <span>{pkg.defaultDays} Days / {pkg.defaultNights} Nights</span>
-                  </div>
-
-                  {/* Upcoming Departures for GROUP tours */}
-                  {pkg.type === 'GROUP' && (
-                    <div className="mb-4">
-                      <div className="flex items-center text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">
-                        <FaCalendarCheck className="mr-2" />
-                        Upcoming Departures:
-                      </div>
-                      {groupDepartures[pkg._id] && groupDepartures[pkg._id].length > 0 ? (
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 rounded-lg p-3 space-y-2 border border-blue-200 dark:border-blue-700">
-                          {groupDepartures[pkg._id].slice(0, 3).map((departure, idx) => {
-                            const availableSeats = departure.totalSeats - departure.bookedSeats;
-                            const isAlmostFull = availableSeats <= 5 && availableSeats > 0;
-                            const isFull = availableSeats <= 0;
-                            
-                            return (
-                              <div key={departure._id} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded px-3 py-2 shadow-sm">
-                                <div className="flex-1">
-                                  <div className="text-sm font-bold text-gray-900 dark:text-white">
-                                    {formatDepartureDate(departure.startDate)}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    {departure.endDate && `to ${formatDepartureDate(departure.endDate)}`}
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className={`text-xs font-semibold ${
-                                    isFull ? 'text-red-600 dark:text-red-400' :
-                                    isAlmostFull ? 'text-orange-600 dark:text-orange-400' :
-                                    'text-green-600 dark:text-green-400'
-                                  }`}>
-                                    {isFull ? 'FULL' : `${availableSeats} seats`}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    {departure.totalSeats} total
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {groupDepartures[pkg._id].length > 3 && (
-                            <div className="text-xs text-center text-blue-600 dark:text-blue-400 font-semibold pt-1">
-                              +{groupDepartures[pkg._id].length - 3} more departure{groupDepartures[pkg._id].length - 3 > 1 ? 's' : ''} available
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 border border-yellow-200 dark:border-yellow-700">
-                          <p className="text-xs text-yellow-700 dark:text-yellow-400 text-center">
-                            No upcoming departures scheduled yet. Contact us for custom dates.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Price */}
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center">
-                      <FaDollarSign className="text-primary mr-1" />
-                      <span className="text-2xl font-bold text-primary">
-                        {pkg.basePrice?.toLocaleString()}
-                      </span>
-                      <span className="text-sm text-gray-500 ml-1">
-                        {pkg.type === 'GROUP' ? '/person' : 'starting'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(pkg);
-                        }}
-                        className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                      >
-                        View Details
-                      </button>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const userId = localStorage.getItem('userId');
-                          if (!userId) {
-                            // prompt login
-                            localStorage.setItem('afterLoginGoto', window.location.pathname);
-                            window.dispatchEvent(new CustomEvent('openAuthModal'));
-                            return;
-                          }
-                          const pkgId = pkg._id;
-                          const isSaved = savedPackageIds.has(pkgId);
-                          // Optimistic UI update
-                          const next = new Set(savedPackageIds);
-                          if (isSaved) next.delete(pkgId); else next.add(pkgId);
-                          setSavedPackageIds(next);
-                          try {
-                            if (isSaved) {
-                              await axios.delete(`/api/users/${userId}/save/${pkgId}`);
-                            } else {
-                              await axios.post(`/api/users/${userId}/save/${pkgId}`);
-                            }
-                          } catch (err) {
-                            // rollback on error
-                            const rollback = new Set(savedPackageIds);
-                            setSavedPackageIds(rollback);
-                            console.error('Failed to toggle saved package', err);
-                          }
-                        }}
-                        className="p-2 rounded-full text-primary hover:text-red-600 transition-colors"
-                        aria-label="Save package"
-                      >
-                        {savedPackageIds.has(pkg._id) ? <FaHeart className="text-red-600" /> : <FaRegHeart />}
-                      </button>
-                    </div>
-                  </div>
+        {loading && (
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="glass overflow-hidden rounded-2xl">
+                <Skeleton className="h-44 w-full rounded-none" />
+                <div className="space-y-3 p-5">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-10 w-full" />
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* No Results */}
-        {!loading && packages.length === 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center">
-            <FaMapMarkerAlt className="mx-auto text-6xl text-gray-300 dark:text-gray-600 mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Packages Found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Try adjusting your filters or search terms
-            </p>
-            <div className="flex items-center justify-center gap-4 mb-6">
-              <button
-                onClick={clearFilters}
-                className="px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                Clear All Filters
-              </button>
-              <button
-                onClick={() => { setSearchTerm(''); setTypeFilter(''); setScopeFilter(''); setCategoryFilter(''); setMinPrice(''); setMaxPrice(''); fetchPackages(); }}
-                className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Browse Popular
-              </button>
-            </div>
+        {!loading && loadError && (
+          <ErrorState
+            title="Packages could not be loaded"
+            message="Check your connection and try again."
+            onRetry={() => runSearch(currentFilters())}
+          />
+        )}
 
-            {/* Suggestions */}
-            <div className="mt-6">
-              <h4 className="text-lg font-semibold mb-4">Try visiting these places</h4>
+        {!loading && !loadError && packages.length > 0 && (
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {packages.map((pkg) => (
+              <PackageCard
+                key={pkg._id}
+                pkg={pkg}
+                departures={groupDepartures[pkg._id]}
+                saved={savedPackageIds.has(pkg._id)}
+                onView={handleViewDetails}
+                onToggleSave={toggleSaved}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && !loadError && packages.length === 0 && (
+          <div className="space-y-10">
+            <EmptyState
+              title="No packages match these filters"
+              description="Try another search term, or clear the filters to see every tour of this type."
+              action={<Button variant="secondary" onClick={clearFilters}>Clear filters</Button>}
+            />
+
+            <section aria-labelledby="suggestions-heading">
+              <h2 id="suggestions-heading" className="font-display text-xl font-bold text-text">Try these tours instead</h2>
               {loadingSuggestions && (
-                <p className="text-sm text-gray-500">Loading suggestions...</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}
+                </div>
               )}
               {!loadingSuggestions && suggestedPackages.length === 0 && (
-                <p className="text-sm text-gray-500">No suggestions available right now.</p>
+                <p className="mt-2 text-sm text-text-muted">No suggestions available right now.</p>
               )}
               {!loadingSuggestions && suggestedPackages.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-3">
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {suggestedPackages.map((pkg) => (
-                    <div key={pkg._id} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 text-left shadow-sm cursor-pointer" onClick={() => handleViewDetails(pkg)}>
-                      <img src={getPackageImage(pkg)} alt={pkg.title} className="w-full h-40 object-cover rounded-md mb-3" />
-                      <div className="font-semibold text-gray-900 dark:text-white mb-1">{pkg.title}</div>
-                      <div className="text-sm text-gray-500 mb-2">{pkg.defaultDays} Days • ${pkg.basePrice}</div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">{pkg.description}</p>
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm text-gray-600 dark:text-gray-400">{formatDestinations(pkg.destinations)}</div>
-                        <div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleViewDetails(pkg); }}
-                            className="px-4 py-2 bg-primary text-white rounded-md text-sm font-medium"
-                          >
+                    <article
+                      key={pkg._id}
+                      onClick={() => handleViewDetails(pkg)}
+                      className="glass cursor-pointer overflow-hidden rounded-xl transition duration-200 hover:-translate-y-1"
+                    >
+                      <PackageImage pkg={pkg} className="h-32 w-full" />
+                      <div className="p-4">
+                        <h3 className="font-semibold text-text">{pkg.title}</h3>
+                        <p className="mt-1 text-sm text-text-muted">
+                          {pkg.defaultDays} Days • {formatDestinations(pkg.destinations)}
+                        </p>
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <span className="font-display font-bold text-brand">BDT {Number(pkg.basePrice || 0).toLocaleString()}</span>
+                          <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); handleViewDetails(pkg); }}>
                             View Details
-                          </button>
+                          </Button>
                         </div>
                       </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           </div>
         )}
       </div>
 
-      {/* Tour Detail Modal */}
       {showModal && selectedPackage && (
         <TourDetailModal
           isOpen={showModal}

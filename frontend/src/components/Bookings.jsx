@@ -1,9 +1,21 @@
+import { LuBanknote, LuCircleX, LuClock, LuTriangleAlert } from 'react-icons/lu';
+import { ChatIcon, CheckIcon, CloseIcon } from './ui/icons.js';
+import { userMessage } from '../utils/errorMessage.js';
+import { notify } from '../utils/notifyStore.js';
+import { paymentTotals } from '../utils/paymentAccounting';
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BookingDetailModal from './BookingDetailModal';
 import OperatorChatModal from './OperatorChatModal';
 import { useAuth } from '../context/AuthContext';
 import ReviewModal from './ReviewModal';
-import { FaExclamationTriangle, FaTimesCircle, FaMoneyBillWave, FaClock } from 'react-icons/fa';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import EmptyState from './ui/EmptyState.jsx';
+import ErrorState from './ui/ErrorState.jsx';
+import Skeleton from './ui/Skeleton.jsx';
+import { bookingLabel } from '../utils/bookingCode.js';
+
 
 const Bookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -72,10 +84,8 @@ const Bookings = () => {
   }, [bookings, user]);
 
   const checkPaymentStatus = (booking) => {
-    const totalPaid = (booking.payments || []).filter(p => 
-      p.status === 'SUCCESS' || p.status === 'COMPLETED' || p.status === 'CONFIRMED'
-    ).reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalAmount = booking.totalAmount || 0;
+    const totalPaid = paymentTotals(booking).gross;
+    const totalAmount = booking.finalAmount ?? booking.totalAmount ?? 0;
     const isPaid = totalPaid >= totalAmount;
     const startDate = booking.startDate ? new Date(booking.startDate) : null;
     const now = new Date();
@@ -107,231 +117,173 @@ const Bookings = () => {
     return { paymentDue, completed, cancelled };
   };
 
+  // Marks a confirmed booking as completed, then offers the review.
+  const endTour = async (b) => {
+    try {
+      const res = await fetch(`/api/bookings/${b._id || b.id}/complete`, { method: 'POST' });
+      if (!res.ok) {
+        const txt = await res.text();
+        notify.error(userMessage(txt, 'The tour could not be marked as completed. Please try again.'));
+        return;
+      }
+      const data = await res.json();
+      const updated = data.booking || data;
+      setBookings(prev => prev.map(x => (x._id === updated._id ? updated : x)));
+      try {
+        const detail = {
+          ...updated,
+          _id: (updated._id && typeof updated._id.toString === 'function') ? updated._id.toString() : (updated._id || updated.id)
+        };
+        window.dispatchEvent(new CustomEvent('bookingUpdated', { detail }));
+      } catch (e) { /* ignore */ }
+      notify.message('Tour marked as completed. You can now write a review.');
+    } catch (err) {
+      console.error('End tour error', err);
+      notify.message('Failed to end tour, please try again later.');
+    }
+  };
+
   const renderBookingCard = (b) => {
     const paymentInfo = checkPaymentStatus(b);
     const isCancelledOrRefunded = b.status === 'CANCELLED' || b.status === 'REFUNDED';
     const showWarning = !isCancelledOrRefunded && !paymentInfo.isPaid && paymentInfo.daysUntilStart !== null && paymentInfo.daysUntilStart <= 7 && paymentInfo.daysUntilStart >= 0;
     const isCancelledDueToNonPayment = isCancelledOrRefunded && b.cancellation?.reason?.includes('payment');
-    
     // Only show refund info if payment was made
     const hasPayments = paymentInfo.totalPaid > 0;
     const hasRefund = isCancelledOrRefunded && hasPayments && b.cancellation?.refundAmount > 0;
     const isRefundProcessed = b.status === 'REFUNDED' || b.cancellation?.refundProcessed;
-    
+    const currency = b.currency || 'BDT';
+    const pkgId = b.packageId?._id || b.packageId || (b.package?._id || b.package);
+    const bookingMarked = b._reviewed || b.review || (b.reviews && b.reviews.length > 0) || b.hasReview || b.reviewId;
+    const alreadyReviewed = bookingMarked || (pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString()));
+
     return (
-      <div key={b._id || b.id} className={`bg-white dark:bg-gray-800 p-4 rounded-xl shadow ${showWarning ? 'border-2 border-red-500' : ''}`}>
+      <article key={b._id || b.id} data-booking-details-id={b._id || b.id} className={`glass rounded-2xl p-5 ${showWarning ? 'ring-2 ring-danger/60' : ''}`}>
         {showWarning && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-3 rounded">
-            <div className="flex items-start">
-              <FaExclamationTriangle className="text-red-500 text-xl mr-2 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-red-800">Payment Required!</p>
-                <p className="text-sm text-red-700">
-                  {paymentInfo.daysUntilStart === 0 
-                    ? 'Tour starts today! Complete payment immediately or booking will be cancelled.'
-                    : `Tour starts in ${paymentInfo.daysUntilStart} day${paymentInfo.daysUntilStart > 1 ? 's' : ''}. Complete payment to confirm your spot.`
-                  }
-                </p>
-                <p className="text-xs text-red-600 mt-1">
-                  Unpaid: {b.currency || 'BDT'} {paymentInfo.totalAmount - paymentInfo.totalPaid}
-                </p>
-              </div>
-            </div>
-          </div>
+          <Notice tone="danger" icon={LuTriangleAlert} title="Payment required">
+            <p>
+              {paymentInfo.daysUntilStart === 0
+                ? 'Tour starts today! Complete payment immediately or booking will be cancelled.'
+                : `Tour starts in ${paymentInfo.daysUntilStart} day${paymentInfo.daysUntilStart > 1 ? 's' : ''}. Complete payment to confirm your spot.`}
+            </p>
+            <p className="mt-1 text-xs">Unpaid: {currency} {paymentInfo.totalAmount - paymentInfo.totalPaid}</p>
+          </Notice>
         )}
         {isCancelledDueToNonPayment && (
-          <div className="bg-red-100 border-l-4 border-red-600 p-3 mb-3 rounded">
-            <div className="flex items-start">
-              <FaTimesCircle className="text-red-600 text-xl mr-2 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-red-900">Booking Cancelled</p>
-                <p className="text-sm text-red-800">{b.cancellation?.reason || 'Cancelled due to non-payment'}</p>
-                <p className="text-xs text-red-700 mt-1">No refund applicable (payment not completed)</p>
-              </div>
-            </div>
-          </div>
+          <Notice tone="danger" icon={LuCircleX} title="Booking cancelled">
+            <p>{b.cancellation?.reason || 'Cancelled due to non-payment'}</p>
+            <p className="mt-1 text-xs">No refund applicable (payment not completed)</p>
+          </Notice>
         )}
         {!isCancelledDueToNonPayment && isCancelledOrRefunded && !hasPayments && (
-          <div className="bg-gray-100 border-l-4 border-gray-500 p-3 mb-3 rounded">
-            <div className="flex items-start">
-              <span className="text-gray-600 text-xl mr-2">✕</span>
-              <div>
-                <p className="font-semibold text-gray-900">Booking Cancelled</p>
-                <p className="text-sm text-gray-700">{b.cancellation?.reason || 'Booking was cancelled'}</p>
-                <p className="text-xs text-gray-600 mt-1">No refund applicable (no payment made)</p>
-              </div>
-            </div>
-          </div>
+          <Notice tone="neutral" icon={CloseIcon} title="Booking cancelled">
+            <p>{b.cancellation?.reason || 'Booking was cancelled'}</p>
+            <p className="mt-1 text-xs">No refund applicable (no payment made)</p>
+          </Notice>
         )}
         {hasRefund && (
-          <div className={`${isRefundProcessed ? 'bg-green-50 border-green-500' : 'bg-yellow-50 border-yellow-500'} border-l-4 p-3 mb-3 rounded`}>
-            <div className="flex items-start">
-              <div className={`${isRefundProcessed ? 'text-green-600' : 'text-yellow-600'} text-xl mr-2 mt-0.5 flex-shrink-0`}>
-                {isRefundProcessed ? <FaMoneyBillWave /> : <FaClock className="animate-pulse" />}
-              </div>
-              <div>
-                <p className={`font-semibold ${isRefundProcessed ? 'text-green-900' : 'text-yellow-900'}`}>
-                  {isRefundProcessed ? 'Refund Processed' : 'Refund Pending'}
-                </p>
-                <p className={`text-sm ${isRefundProcessed ? 'text-green-800' : 'text-yellow-800'}`}>
-                  {isRefundProcessed 
-                    ? `${b.currency || 'BDT'} ${b.cancellation.refundAmount} has been refunded to your account.`
-                    : `${b.currency || 'BDT'} ${b.cancellation.refundAmount} will be refunded soon.`
-                  }
-                </p>
-                {isRefundProcessed && b.cancellation.refundProcessedAt && (
-                  <p className="text-xs text-green-700 mt-1">
-                    Processed on: {new Date(b.cancellation.refundProcessedAt).toLocaleDateString()}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+          <Notice
+            tone={isRefundProcessed ? 'success' : 'warning'}
+            icon={isRefundProcessed ? LuBanknote : LuClock}
+            title={isRefundProcessed ? 'Refund processed' : 'Refund pending'}
+          >
+            <p>
+              {isRefundProcessed
+                ? `${currency} ${b.cancellation.refundAmount} has been refunded to your account.`
+                : `${currency} ${b.cancellation.refundAmount} will be refunded soon.`}
+            </p>
+            {isRefundProcessed && b.cancellation.refundProcessedAt && (
+              <p className="mt-1 text-xs">Processed on: {new Date(b.cancellation.refundProcessedAt).toLocaleDateString()}</p>
+            )}
+          </Notice>
         )}
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="font-semibold text-lg">{b.packageId?.title || b.package?.title || b.packageTitle || 'Package'}</h3>
-            <p className="text-sm text-gray-500">{b.startDate ? new Date(b.startDate).toLocaleDateString() : 'TBD'} → {b.endDate ? new Date(b.endDate).toLocaleDateString() : 'TBD'}</p>
+
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold tracking-wide text-brand">{bookingLabel(b)}</p>
+            <h4 className="font-display text-lg font-semibold text-text">{b.packageId?.title || b.package?.title || b.packageTitle || 'Package'}</h4>
+            <p className="mt-1 text-sm text-text-muted">
+              {b.startDate ? new Date(b.startDate).toLocaleDateString() : 'TBD'} → {b.endDate ? new Date(b.endDate).toLocaleDateString() : 'TBD'}
+            </p>
           </div>
-          <div className="text-right">
-            <p className="font-bold text-primary">{b.currency || '$'}{b.totalAmount || b.amount || 0}</p>
-            <p className={`mt-1 text-sm font-semibold ${
-              b.status === 'CONFIRMED' || b.status === 'Confirmed' ? 'text-green-600' : 
-              b.status === 'REFUNDED' ? 'text-blue-600' :
-              b.status === 'CANCELLED' ? 'text-red-600' : 'text-yellow-600'
-            }`}>{b.status || 'Pending'}</p>
+          <div className="shrink-0 text-right">
+            <p className="font-display text-lg font-bold text-brand">
+              {currency} {Number(b.finalAmount ?? b.totalAmount ?? b.amount ?? 0).toLocaleString()}
+            </p>
+            <div className="mt-1 flex justify-end"><Badge value={b.status || 'PENDING'} /></div>
             {b.payments && b.payments.length > 0 && (
-              <p className={`text-sm ${
-                paymentInfo.isPaid ? 'text-green-600 font-semibold' : 'text-gray-500'
-              }`}>Paid: {b.currency || 'BDT'} {paymentInfo.totalPaid}</p>
+              <p className={`mt-1 text-xs ${paymentInfo.isPaid ? 'font-semibold text-success' : 'text-text-muted'}`}>
+                Paid: {currency} {paymentInfo.totalPaid}
+              </p>
             )}
           </div>
         </div>
-        <div className="mt-4 flex gap-2">
-          <button onClick={() => setSelected(b)} className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-green-700 transition-colors">
-            View Details
-          </button>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => setSelected(b)}>View Details</Button>
           {paymentInfo.isPaid && b.assignedOperator && (
-            <button 
-              onClick={() => setChatBooking(b)} 
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              💬 Chat
-            </button>
+            <Button size="sm" variant="secondary" icon={ChatIcon} onClick={() => setChatBooking(b)}>Chat</Button>
           )}
-          {(paymentInfo.isPaid && (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN')) && (
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch(`/api/bookings/${b._id || b.id}/complete`, { method: 'POST' });
-                  if (!res.ok) {
-                    const txt = await res.text();
-                    alert('Failed to end tour: ' + txt);
-                    return;
-                  }
-                  const data = await res.json();
-                  const updated = data.booking || data;
-                  setBookings(prev => prev.map(x => (x._id === updated._id ? updated : x)));
-                  try {
-                    const detail = {
-                      ...updated,
-                      _id: (updated._id && typeof updated._id.toString === 'function') ? updated._id.toString() : (updated._id || updated.id)
-                    };
-                    window.dispatchEvent(new CustomEvent('bookingUpdated', { detail }));
-                  } catch (e) { /* ignore */ }
-                  alert('Tour marked as completed. You can now write a review.');
-                } catch (err) {
-                  console.error('End tour error', err);
-                  alert('Failed to end tour, please try again later.');
-                }
-              }}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-            >
-              End Tour
-            </button>
+          {paymentInfo.isPaid && (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN') && (
+            <Button size="sm" variant="secondary" onClick={() => endTour(b)}>End tour</Button>
           )}
-          {b.status === 'COMPLETED' && (() => {
-            const pkgId = b.packageId?._id || b.packageId || (b.package?._id || b.package);
-            const bookingMarked = b._reviewed || b.review || (b.reviews && b.reviews.length > 0) || b.hasReview || b.reviewId;
-            const already = bookingMarked || (pkgId && reviewedPackages && reviewedPackages.has(pkgId.toString()));
-            if (already) {
-              return (
-                <button onClick={() => window.location.href = '/customer/reviews'} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition-colors">View Review</button>
-              );
-            }
-            return (
-              <button onClick={() => { setReviewTargetBooking(b); setReviewModalOpen(true); }} className="px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors">Write Review</button>
-            );
-          })()}
+          {b.status === 'COMPLETED' && (alreadyReviewed ? (
+            <Button size="sm" variant="secondary" onClick={() => navigate('/customer/reviews')}>View review</Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => { setReviewTargetBooking(b); setReviewModalOpen(true); }}>Write review</Button>
+          ))}
         </div>
-      </div>
+      </article>
     );
   };
 
+  const groups = categorizeBookings();
+
   return (
-    <div className="mt-8">
-      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">My Bookings</h2>
-      {loading ? (
-        <p>Loading bookings…</p>
-      ) : error ? (
-        <p className="text-red-600">{error}</p>
-      ) : bookings.length === 0 ? (
-        <p>No bookings found.</p>
-      ) : (
-        <>
-          {(() => {
-            const { paymentDue, completed, cancelled } = categorizeBookings();
-            
-            return (
-              <>
-                {/* Payment Due Section */}
-                {paymentDue.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="text-xl font-semibold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
-                      <FaExclamationTriangle className="text-red-500 flex-shrink-0" /> Payment Due ({paymentDue.length})
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {paymentDue.map(renderBookingCard)}
-                    </div>
-                  </div>
-                )}
+    <section aria-labelledby="bookings-heading" className="space-y-6">
+      <h2 id="bookings-heading" className="font-display text-2xl font-bold text-text">My bookings</h2>
 
-                {/* Confirmed/Completed Section */}
-                {completed.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="text-xl font-semibold text-green-600 dark:text-green-400 mb-4 flex items-center">
-                      <span className="mr-2">✓</span> Confirmed & Completed ({completed.length})
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {completed.map(renderBookingCard)}
-                    </div>
-                  </div>
-                )}
-
-                {/* Cancelled Section */}
-                {cancelled.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="text-xl font-semibold text-gray-500 dark:text-gray-400 mb-4 flex items-center">
-                      <span className="mr-2">✕</span> Cancelled ({cancelled.length})
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {cancelled.map(renderBookingCard)}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </>
+      {loading && (
+        <div className="grid gap-4 md:grid-cols-2" aria-hidden="true">
+          {[0, 1].map((i) => <Skeleton key={i} className="h-40 w-full rounded-2xl" />)}
+        </div>
+      )}
+      {!loading && error && (
+        <ErrorState
+          title="Your bookings could not be loaded"
+          message={error === 'Please log in to view your bookings.' ? error : 'Please refresh the page. If it keeps happening, contact support.'}
+        />
+      )}
+      {!loading && !error && bookings.length === 0 && (
+        <EmptyState
+          title="No bookings yet"
+          description="When you book a tour, it appears here."
+          action={<Button variant="secondary" onClick={() => navigate('/browse-packages')}>Browse tours</Button>}
+        />
+      )}
+      {!loading && !error && bookings.length > 0 && (
+        <div className="space-y-8">
+          {groups.paymentDue.length > 0 && (
+            <BookingGroup id="payment-due-heading" title="Payment due" tone="danger" icon={LuTriangleAlert} items={groups.paymentDue} render={renderBookingCard} />
+          )}
+          {groups.completed.length > 0 && (
+            <BookingGroup id="completed-heading" title="Confirmed & completed" tone="success" icon={CheckIcon} items={groups.completed} render={renderBookingCard} />
+          )}
+          {groups.cancelled.length > 0 && (
+            <BookingGroup id="cancelled-heading" title="Cancelled" tone="neutral" icon={CloseIcon} items={groups.cancelled} render={renderBookingCard} />
+          )}
+        </div>
       )}
 
       {selected && (
         <BookingDetailModal booking={selected} onClose={() => setSelected(null)} onUpdate={(updated) => {
-          setBookings((prev) => prev.map(p => (p._id === updated._id ? updated : p)));
-          setSelected(updated);
+          const merged = { ...selected, ...updated, packageId: typeof updated.packageId === 'string' ? selected.packageId : updated.packageId };
+          setBookings(previous => previous.map(booking => booking._id === updated._id ? merged : booking));
+          setSelected(merged);
+          window.dispatchEvent(new CustomEvent('bookingUpdated', { detail: merged }));
         }} />
       )}
-      
+
       {chatBooking && (
         <OperatorChatModal
           isOpen={true}
@@ -357,8 +309,44 @@ const Bookings = () => {
           }}
         />
       )}
-    </div>
+    </section>
   );
 };
 
 export default Bookings;
+
+const NOTICE_TONE = {
+  danger: { box: 'border-danger/40 bg-danger/10', icon: 'text-danger' },
+  success: { box: 'border-success/40 bg-success/10', icon: 'text-success' },
+  warning: { box: 'border-warning/40 bg-warning/10', icon: 'text-warning' },
+  neutral: { box: 'border-border bg-surface-muted', icon: 'text-text-muted' },
+};
+
+// Coloured message inside a booking card: payment, cancellation and refund.
+function Notice({ tone, icon: Icon, title, children }) {
+  const style = NOTICE_TONE[tone];
+  return (
+    <div className={`mb-4 flex items-start gap-3 rounded-xl border p-3 ${style.box}`}>
+      <Icon aria-hidden="true" className={`mt-0.5 h-5 w-5 flex-none ${style.icon}`} />
+      <div className="min-w-0 text-sm">
+        <p className="font-semibold text-text">{title}</p>
+        <div className="mt-0.5 text-text-muted">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const GROUP_TONE = { danger: 'text-danger', success: 'text-success', neutral: 'text-text-muted' };
+
+// A titled group of booking cards, for example "Payment due".
+function BookingGroup({ id, title, tone, icon: Icon, items, render }) {
+  return (
+    <section aria-labelledby={id} className="space-y-4">
+      <h3 id={id} className={`flex items-center gap-2 font-display text-lg font-semibold ${GROUP_TONE[tone]}`}>
+        <Icon aria-hidden="true" className="h-5 w-5" />
+        {title} ({items.length})
+      </h3>
+      <div className="grid gap-4 md:grid-cols-2">{items.map(render)}</div>
+    </section>
+  );
+}

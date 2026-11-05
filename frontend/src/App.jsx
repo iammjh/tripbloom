@@ -1,4 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+
+// The landing page is always dark: the dark token set is applied to <html> while it is mounted only.
+const LandingTheme = ({ children }) => {
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    return () => document.documentElement.classList.remove('dark');
+  }, []);
+  return children;
+};
+import PaymentsManager from './components/PaymentsManager';
 import { createBrowserRouter, RouterProvider, createRoutesFromElements, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import TourPackagesManager from './components/TourPackagesManager';
@@ -37,7 +47,7 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <>
       <Route path="/" element={
-        <div className="App bg-gradient-to-br from-green-50 via-blue-100 to-emerald-100 dark:bg-gradient-to-br dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 transition-colors duration-300">
+        <LandingTheme><div className="App mesh-bg transition-colors duration-300">
           <Navbar />
           <Hero />
           <Stats />
@@ -48,7 +58,7 @@ const router = createBrowserRouter(
           <Reviews />
           <Contact />
           <Footer />
-        </div>
+        </div></LandingTheme>
       } />
       <Route path="/admin" element={
         <ProtectedRoute role="admin">
@@ -61,6 +71,7 @@ const router = createBrowserRouter(
         <Route path="operators" element={<OperatorsManager />} />
         <Route path="packages" element={<TourPackagesManager />} />
         <Route path="users" element={<UsersManager />} />
+        <Route path="payments" element={<PaymentsManager />} />
         <Route path="refunds" element={<RefundsManager />} />
         <Route path="date-changes" element={<DateChangeRequestsManager />} />
         <Route path="kyc" element={<AdminKYCManager />} />

@@ -1,9 +1,22 @@
+import { LuCalendar, LuCircleCheck, LuCircleX, LuClock, LuEye, LuFileText, LuFilter, LuIdCard, LuMail, LuLoader, LuSearch, LuUser } from 'react-icons/lu';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
+import { notifyAdminDataChanged } from '../utils/adminEvents.js';
+import PrivateKycDocument from './PrivateKycDocument';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  FaIdCard, FaCheckCircle, FaTimesCircle, FaClock, FaEye, 
-  FaUser, FaCalendar, FaFileAlt, FaFilter, FaSearch, FaSpinner
-} from 'react-icons/fa';
+import { thClass, tdClass } from './admin/AdminPrimitives.jsx';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import Badge from './ui/Badge.jsx';
+import FormField, { fieldAria, inputClass } from './ui/FormField.jsx';
+import { DetailFact } from './admin/DetailPrimitives.jsx';
+
+
+const KYC_TONE = { pending: 'warning', approved: 'success', rejected: 'danger' };
+const KYC_LABEL = { pending: 'Pending review', approved: 'Approved', rejected: 'Rejected' };
+const customerName = (kyc) => kyc.userFullName || kyc.user?.fullName || kyc.user?.name || 'Unknown customer';
+const formatLongDate = (value) => new Date(value).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 const AdminKYCManager = () => {
   const [kycRequests, setKycRequests] = useState([]);
@@ -26,29 +39,7 @@ const AdminKYCManager = () => {
     filterRequests();
   }, [kycRequests, statusFilter, searchQuery]);
 
-  // Body scroll lock for detail modal
-  useEffect(() => {
-    if (showDetailModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [showDetailModal]);
 
-  // Body scroll lock for reject modal
-  useEffect(() => {
-    if (showRejectModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [showRejectModal]);
 
   const fetchKYCRequests = async () => {
     setLoading(true);
@@ -65,7 +56,7 @@ const AdminKYCManager = () => {
       }
     } catch (error) {
       console.error('Failed to fetch KYC requests:', error);
-      alert('Failed to load KYC requests. Make sure you are authenticated as admin.');
+      notify.message('Failed to load KYC requests. Make sure you are authenticated as admin.');
     }
     setLoading(false);
   };
@@ -108,7 +99,7 @@ const AdminKYCManager = () => {
   };
 
   const handleApprove = async (kycId) => {
-    if (!window.confirm('Are you sure you want to approve this KYC submission?')) {
+    if (!(await confirmAction({ message: 'Are you sure you want to approve this KYC submission?' }))) {
       return;
     }
 
@@ -126,14 +117,15 @@ const AdminKYCManager = () => {
       );
 
       if (response.data.success) {
-        alert('KYC approved successfully');
+        notify.message('KYC approved successfully');
+        notifyAdminDataChanged();
         fetchKYCRequests();
         setShowDetailModal(false);
         setSelectedKYC(null);
       }
     } catch (error) {
       console.error('Failed to approve KYC:', error);
-      alert(error.response?.data?.message || 'Failed to approve KYC');
+      notify.message(error.response?.data?.message || 'Failed to approve KYC');
     }
     setActionLoading(false);
   };
@@ -146,7 +138,7 @@ const AdminKYCManager = () => {
 
   const handleRejectConfirm = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please provide a reason for rejection');
+      notify.message('Please provide a reason for rejection');
       return;
     }
 
@@ -164,7 +156,8 @@ const AdminKYCManager = () => {
       );
 
       if (response.data.success) {
-        alert('KYC rejected successfully');
+        notify.message('KYC rejected successfully');
+        notifyAdminDataChanged();
         fetchKYCRequests();
         setShowRejectModal(false);
         setShowDetailModal(false);
@@ -174,7 +167,7 @@ const AdminKYCManager = () => {
       }
     } catch (error) {
       console.error('Failed to reject KYC:', error);
-      alert(error.response?.data?.message || 'Failed to reject KYC');
+      notify.message(error.response?.data?.message || 'Failed to reject KYC');
     }
     setActionLoading(false);
   };
@@ -182,21 +175,21 @@ const AdminKYCManager = () => {
   const getStatusBadge = (status) => {
     const badges = {
       pending: {
-        bg: 'bg-yellow-100 dark:bg-yellow-900/30',
-        text: 'text-yellow-800 dark:text-yellow-300',
-        icon: FaClock,
+        bg: 'bg-warning/10',
+        text: 'text-warning',
+        icon: LuClock,
         label: 'Pending'
       },
       approved: {
-        bg: 'bg-green-100 dark:bg-green-900/30',
-        text: 'text-green-800 dark:text-green-300',
-        icon: FaCheckCircle,
+        bg: 'bg-success/10',
+        text: 'text-success',
+        icon: LuCircleCheck,
         label: 'Approved'
       },
       rejected: {
-        bg: 'bg-red-100 dark:bg-red-900/30',
-        text: 'text-red-800 dark:text-red-300',
-        icon: FaTimesCircle,
+        bg: 'bg-danger/10',
+        text: 'text-danger',
+        icon: LuCircleX,
         label: 'Rejected'
       }
     };
@@ -229,67 +222,67 @@ const AdminKYCManager = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 p-6">
+    <div className="min-h-screen bg-surface p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">KYC Management</h1>
-          <p className="text-gray-400">Review and manage customer KYC submissions</p>
+          <p className="text-text-muted">Review and manage customer KYC submissions</p>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div className="flex items-center justify-between">
+          <div className="bg-surface rounded-lg p-4 border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-gray-400 text-sm">Total Submissions</p>
+                <p className="text-text-muted text-sm">Total Submissions</p>
                 <p className="text-2xl font-bold text-white mt-1">{stats.total}</p>
               </div>
-              <FaIdCard className="text-blue-400 text-3xl" />
+              <LuIdCard aria-hidden="true" className="text-info text-3xl" />
             </div>
           </div>
 
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div className="flex items-center justify-between">
+          <div className="bg-surface rounded-lg p-4 border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-gray-400 text-sm">Pending Review</p>
-                <p className="text-2xl font-bold text-yellow-400 mt-1">{stats.pending}</p>
+                <p className="text-text-muted text-sm">Pending Review</p>
+                <p className="text-2xl font-bold text-warning mt-1">{stats.pending}</p>
               </div>
-              <FaClock className="text-yellow-400 text-3xl" />
+              <LuClock aria-hidden="true" className="text-warning text-3xl" />
             </div>
           </div>
 
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div className="flex items-center justify-between">
+          <div className="bg-surface rounded-lg p-4 border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-gray-400 text-sm">Approved</p>
-                <p className="text-2xl font-bold text-green-400 mt-1">{stats.approved}</p>
+                <p className="text-text-muted text-sm">Approved</p>
+                <p className="text-2xl font-bold text-success mt-1">{stats.approved}</p>
               </div>
-              <FaCheckCircle className="text-green-400 text-3xl" />
+              <LuCircleCheck aria-hidden="true" className="text-success text-3xl" />
             </div>
           </div>
 
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div className="flex items-center justify-between">
+          <div className="bg-surface rounded-lg p-4 border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-gray-400 text-sm">Rejected</p>
-                <p className="text-2xl font-bold text-red-400 mt-1">{stats.rejected}</p>
+                <p className="text-text-muted text-sm">Rejected</p>
+                <p className="text-2xl font-bold text-danger mt-1">{stats.rejected}</p>
               </div>
-              <FaTimesCircle className="text-red-400 text-3xl" />
+              <LuCircleX aria-hidden="true" className="text-danger text-3xl" />
             </div>
           </div>
         </div>
 
         {/* Filters and Search */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-6">
+        <div className="bg-surface rounded-lg p-4 border border-border mb-6">
           <div className="flex flex-col md:flex-row gap-4">
             {/* Status Filter */}
             <div className="flex items-center space-x-2">
-              <FaFilter className="text-gray-400" />
+              <LuFilter aria-hidden="true" className="text-text-muted" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-surface-muted text-white rounded-lg px-4 py-2 border border-border focus:outline-none focus:ring-2 focus:ring-brand"
               >
                 <option value="all">All Status</option>
                 <option value="pending">Pending</option>
@@ -300,13 +293,13 @@ const AdminKYCManager = () => {
 
             {/* Search */}
             <div className="flex-1 relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <LuSearch aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-muted" />
               <input
                 type="text"
                 placeholder="Search by name, email, or document number..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-700 text-white rounded-lg pl-10 pr-4 py-2 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-surface-muted text-white rounded-lg pl-10 pr-4 py-2 border border-border focus:outline-none focus:ring-2 focus:ring-brand"
               />
             </div>
           </div>
@@ -315,64 +308,64 @@ const AdminKYCManager = () => {
         {/* KYC List */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
-            <FaSpinner className="animate-spin text-blue-400 text-4xl" />
+            <LuLoader aria-hidden="true" className="animate-spin text-info text-4xl" />
           </div>
         ) : filteredRequests.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-12 border border-gray-700 text-center">
-            <FaIdCard className="mx-auto text-gray-600 text-6xl mb-4" />
-            <p className="text-gray-400 text-lg">No KYC submissions found</p>
+          <div className="bg-surface rounded-lg p-12 border border-border text-center">
+            <LuIdCard aria-hidden="true" className="mx-auto text-text-muted text-6xl mb-4" />
+            <p className="text-text-muted text-lg">No KYC submissions found</p>
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+          <div className="bg-surface rounded-lg border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-750">
-                  <tr className="border-b border-gray-700">
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Customer</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Document Type</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Document #</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Submitted</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Status</th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+                <thead className="bg-surface-muted">
+                  <tr className="border-b border-border">
+                    <th className={thClass}>Customer</th>
+                    <th className={thClass}>Document Type</th>
+                    <th className={thClass}>Document #</th>
+                    <th className={thClass}>Submitted</th>
+                    <th className={thClass}>Status</th>
+                    <th className={thClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {filteredRequests.map((kyc) => (
-                    <tr key={kyc._id} className="hover:bg-gray-750 transition">
-                      <td className="px-6 py-4">
+                    <tr key={kyc._id} className="hover:bg-surface-muted transition">
+                      <td className={tdClass}>
                         <div className="flex items-center">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold mr-3">
+                          <div className="w-10 h-10 rounded-full bg-brand flex items-center justify-center text-white font-semibold mr-3">
                             {((kyc.userFullName || kyc.user?.fullName || kyc.user?.name || 'U').charAt(0) || 'U').toUpperCase()}
                           </div>
                           <div>
                             <p className="text-white font-medium">{kyc.userFullName || kyc.user?.fullName || kyc.user?.name || 'Unknown User'}</p>
-                            <p className="text-gray-400 text-sm">{kyc.userEmail || kyc.user?.email || 'No email'}</p>
+                            <p className="text-text-muted text-sm">{kyc.userEmail || kyc.user?.email || 'No email'}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-gray-300">
+                      <td className={tdClass}>
                         {getDocumentTypeLabel(kyc.documentType)}
                       </td>
-                      <td className="px-6 py-4 text-gray-300 font-mono text-sm">
+                      <td className={tdClass}>
                         {kyc.documentNumber}
                       </td>
-                      <td className="px-6 py-4 text-gray-400 text-sm">
+                      <td className={tdClass}>
                         {new Date(kyc.createdAt).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric'
                         })}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className={tdClass}>
                         {getStatusBadge(kyc.status)}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className={tdClass}>
                         <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewDetails(kyc)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+                            className="bg-brand hover:opacity-90 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
                           >
-                            <FaEye />
+                            <LuEye aria-hidden="true" />
                             <span>View</span>
                           </button>
                         </div>
@@ -385,208 +378,98 @@ const AdminKYCManager = () => {
           </div>
         )}
 
-        {/* Detail Modal */}
-        {showDetailModal && selectedKYC && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-gray-700">
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-t-2xl">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-blue-600 font-bold text-xl">
-                      {((selectedKYC.userFullName || selectedKYC.user?.fullName || selectedKYC.user?.name || 'U').charAt(0) || 'U').toUpperCase()}
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-white">KYC Submission Details</h2>
-                      <p className="text-blue-100">{selectedKYC.userFullName || selectedKYC.user?.fullName || selectedKYC.user?.name || 'Unknown User'}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="text-white hover:bg-white/20 rounded-lg p-2 transition"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+        {/* Submission details */}
+        <Modal
+          open={showDetailModal && Boolean(selectedKYC)}
+          onClose={() => setShowDetailModal(false)}
+          title="KYC submission"
+          description={selectedKYC ? `${customerName(selectedKYC)} · ${getDocumentTypeLabel(selectedKYC.documentType)}` : ''}
+          size="lg"
+          rootClassName="dark"
+          footer={selectedKYC && selectedKYC.status === 'pending' ? (
+            <>
+              <Button variant="danger" icon={LuCircleX} onClick={() => handleRejectClick(selectedKYC)} disabled={actionLoading}>Reject</Button>
+              <Button icon={LuCircleCheck} onClick={() => handleApprove(selectedKYC._id)} loading={actionLoading}>Approve</Button>
+            </>
+          ) : (
+            <Button variant="secondary" onClick={() => setShowDetailModal(false)}>Close</Button>
+          )}
+        >
+          {selectedKYC && (
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge tone={KYC_TONE[selectedKYC.status] || 'warning'}>{KYC_LABEL[selectedKYC.status] || 'Pending review'}</Badge>
+                <p className="text-xs text-text-muted">Submitted {formatLongDate(selectedKYC.createdAt)}</p>
               </div>
 
-              {/* Modal Body */}
-              <div className="p-6 space-y-6">
-                {/* Status */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Current Status</label>
-                  {getStatusBadge(selectedKYC.status)}
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <DetailFact icon={LuUser} label="Customer" value={customerName(selectedKYC)} />
+                <DetailFact icon={LuMail} label="Email" value={selectedKYC.user?.email || 'Not on file'} />
+                <DetailFact icon={LuFileText} label="Document type" value={getDocumentTypeLabel(selectedKYC.documentType)} />
+                <DetailFact icon={LuIdCard} label="Document number" value={selectedKYC.documentNumber || '—'} mono />
+                {selectedKYC.verifiedAt && <DetailFact icon={LuCircleCheck} label="Verified at" value={formatLongDate(selectedKYC.verifiedAt)} />}
+              </dl>
+
+              <section aria-labelledby="kyc-document-heading" className="space-y-3">
+                <h3 id="kyc-document-heading" className="font-display text-base font-semibold text-text">Document</h3>
+                <div className="glass overflow-hidden rounded-2xl p-3">
+                  <PrivateKycDocument
+                    path={selectedKYC.documentImage}
+                    alt="KYC document"
+                    className="mx-auto max-h-[420px] w-auto max-w-full rounded-xl border border-border"
+                  />
                 </div>
+              </section>
 
-                {/* Customer Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block flex items-center">
-                      <FaUser className="mr-2" /> Customer Name
-                    </label>
-                    <p className="text-white bg-gray-700 px-4 py-2 rounded-lg">
-                      {selectedKYC.userFullName || selectedKYC.user?.fullName || selectedKYC.user?.name || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block flex items-center">
-                      <FaCalendar className="mr-2" /> Email
-                    </label>
-                    <p className="text-white bg-gray-700 px-4 py-2 rounded-lg">
-                      {selectedKYC.user?.email || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Document Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block flex items-center">
-                      <FaFileAlt className="mr-2" /> Document Type
-                    </label>
-                    <p className="text-white bg-gray-700 px-4 py-2 rounded-lg">
-                      {getDocumentTypeLabel(selectedKYC.documentType)}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block flex items-center">
-                      <FaIdCard className="mr-2" /> Document Number
-                    </label>
-                    <p className="text-white bg-gray-700 px-4 py-2 rounded-lg font-mono">
-                      {selectedKYC.documentNumber}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Submission Date */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block flex items-center">
-                    <FaCalendar className="mr-2" /> Submitted On
-                  </label>
-                  <p className="text-white bg-gray-700 px-4 py-2 rounded-lg">
-                    {new Date(selectedKYC.createdAt).toLocaleString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </p>
-                </div>
-
-                {/* Document Image */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Document Image</label>
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <img
-                      src={`/${selectedKYC.documentImage}`}
-                      alt="KYC Document"
-                      className="max-w-full h-auto rounded-lg border-2 border-gray-600"
-                      onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/600x400?text=Document+Not+Available';
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Verification Details (if verified) */}
-                {selectedKYC.status !== 'pending' && (
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block">Admin Remarks</label>
-                    <p className="text-white bg-gray-700 px-4 py-3 rounded-lg">
-                      {selectedKYC.remarks || 'No remarks provided'}
-                    </p>
-                  </div>
-                )}
-
-                {selectedKYC.verifiedAt && (
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block">Verified At</label>
-                    <p className="text-white bg-gray-700 px-4 py-2 rounded-lg">
-                      {new Date(selectedKYC.verifiedAt).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              {selectedKYC.status === 'pending' && (
-                <div className="bg-gray-750 p-6 rounded-b-2xl flex justify-end space-x-3 border-t border-gray-700">
-                  <button
-                    onClick={() => handleRejectClick(selectedKYC)}
-                    disabled={actionLoading}
-                    className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition disabled:opacity-50"
-                  >
-                    {actionLoading ? <FaSpinner className="animate-spin" /> : <FaTimesCircle />}
-                    <span>Reject</span>
-                  </button>
-                  <button
-                    onClick={() => handleApprove(selectedKYC._id)}
-                    disabled={actionLoading}
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition disabled:opacity-50"
-                  >
-                    {actionLoading ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
-                    <span>Approve</span>
-                  </button>
-                </div>
+              {selectedKYC.status !== 'pending' && (
+                <section aria-labelledby="kyc-remarks-heading" className="space-y-2">
+                  <h3 id="kyc-remarks-heading" className="font-display text-base font-semibold text-text">Admin remarks</h3>
+                  <p className="rounded-xl bg-surface-muted p-4 text-sm text-text">{selectedKYC.remarks || 'No remarks provided'}</p>
+                </section>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </Modal>
 
-        {/* Rejection Modal */}
-        {showRejectModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-            <div className="bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full border border-gray-700">
-              <div className="bg-red-600 p-6 rounded-t-2xl">
-                <h3 className="text-xl font-bold text-white flex items-center">
-                  <FaTimesCircle className="mr-2" />
-                  Reject KYC Submission
-                </h3>
-              </div>
-              <div className="p-6">
-                <p className="text-gray-300 mb-4">
-                  Please provide a reason for rejecting this KYC submission. This will be visible to the customer.
-                </p>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Enter rejection reason..."
-                  rows={4}
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-                />
-              </div>
-              <div className="bg-gray-750 p-6 rounded-b-2xl flex justify-end space-x-3 border-t border-gray-700">
-                <button
-                  onClick={() => {
-                    setShowRejectModal(false);
-                    setPendingActionKYC(null);
-                    setRejectionReason('');
-                  }}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRejectConfirm}
-                  disabled={actionLoading || !rejectionReason.trim()}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
-                >
-                  {actionLoading ? <FaSpinner className="animate-spin" /> : <FaTimesCircle />}
-                  <span>Confirm Rejection</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Rejection reason */}
+        <Modal
+          open={showRejectModal}
+          onClose={() => {
+            if (actionLoading) return;
+            setShowRejectModal(false);
+            setPendingActionKYC(null);
+            setRejectionReason('');
+          }}
+          title="Reject this KYC submission?"
+          description="The reason is shown to the customer."
+          size="sm"
+          rootClassName="dark"
+          footer={(
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => { setShowRejectModal(false); setPendingActionKYC(null); setRejectionReason(''); }}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleRejectConfirm} disabled={!rejectionReason.trim()} loading={actionLoading}>
+                Confirm Rejection
+              </Button>
+            </>
+          )}
+        >
+          <FormField id="kyc-reject-reason" label="Reason" required>
+            <textarea
+              {...fieldAria('kyc-reject-reason')}
+              rows={4}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              className={`${inputClass} resize-none`}
+            />
+          </FormField>
+        </Modal>
       </div>
     </div>
   );

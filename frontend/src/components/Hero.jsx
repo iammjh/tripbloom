@@ -1,105 +1,96 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { FaSearch, FaCalendarAlt, FaMapMarkerAlt } from 'react-icons/fa';
+import { LuCalendar, LuMapPin, LuSearch, LuArrowRight, LuUsers } from 'react-icons/lu';
+import Button from './ui/Button.jsx';
+
+const HISTORY_KEY = 'tripbloom_search_history';
+const todayString = () => new Date().toISOString().split('T')[0];
+const fieldClass = 'min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-focus';
 
 const Hero = () => {
   const navigate = useNavigate();
-  const [searchData, setSearchData] = useState({
-    destination: '',
-    type: 'personal',
-    dates: ''
-  });
+  const ids = { destination: useId(), type: useId(), dates: useId(), list: useId() };
+  const [searchData, setSearchData] = useState({ destination: '', type: 'personal', dates: '' });
 
-  // Autocomplete / suggestion state
+  // Autocomplete state
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [searchHistory, setSearchHistory] = useState([]);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-  const suggRef = useRef(null);
+  // Separate refs: the field wrapper and the portalled list are different elements.
+  const fieldRef = useRef(null);
+  const listRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Debounce and cancel control for API calls
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
-  // Prefer Mapbox if token available in Vite env, otherwise fallback to Nominatim
   const MAPBOX_TOKEN = typeof import.meta !== 'undefined' ? import.meta.env.VITE_MAPBOX_TOKEN : undefined;
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    
-    const dest = (searchData.destination || '').trim();
-    const tourType = searchData.type || 'personal';
-    // prevent past dates
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (searchData.dates && searchData.dates < todayStr) {
-      // normalize to today if a past date somehow selected
-      searchData.dates = todayStr;
-      setSearchData({...searchData});
-    }
-    
-    // Save to search history
-    if (dest) {
-      const normalized = dest;
-      const updated = [normalized, ...searchHistory.filter(d => d.toLowerCase() !== normalized.toLowerCase())].slice(0, 10);
-      setSearchHistory(updated);
-      try {
-        localStorage.setItem('tripbloom_search_history', JSON.stringify(updated));
-      } catch (err) {
-        // ignore storage errors
-      }
-      setShowSuggestions(false);
-    }
-    
-    // Navigate to browse packages with search filters
-    const searchParams = new URLSearchParams();
-    if (dest) searchParams.set('search', dest);
-    if (tourType && tourType !== 'all') searchParams.set('type', tourType.toUpperCase());
-    
-    const queryString = searchParams.toString();
-    navigate(`/browse-packages${queryString ? `?${queryString}` : ''}`);
-  };
-
-  // Load search history from localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('tripbloom_search_history');
+      const raw = localStorage.getItem(HISTORY_KEY);
       if (raw) setSearchHistory(JSON.parse(raw));
-    } catch (err) {
-      // ignore
+    } catch {
+      // ignore unreadable history
     }
   }, []);
 
-  // Click outside to close suggestions
+  // Close suggestions when the user clicks anywhere outside both the field and the list.
   useEffect(() => {
-    const onDocClick = (ev) => {
-      if (suggRef.current && !suggRef.current.contains(ev.target)) {
+    const onPointerDown = event => {
+      const inside = (fieldRef.current && fieldRef.current.contains(event.target)) || (listRef.current && listRef.current.contains(event.target));
+      if (!inside) {
         setShowSuggestions(false);
         setActiveSuggestionIndex(-1);
       }
     };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  const updateSuggestions = (value) => {
-    const q = value.trim();
-    // Update dropdown position based on input element
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (abortRef.current) abortRef.current.abort();
+  }, []);
+
+  const handleSearch = event => {
+    event.preventDefault();
+    const destination = (searchData.destination || '').trim();
+    const tourType = searchData.type || 'personal';
+    // A past date is normalised to today without mutating state in place.
+    const dates = searchData.dates && searchData.dates < todayString() ? todayString() : searchData.dates;
+    if (dates !== searchData.dates) setSearchData(current => ({ ...current, dates }));
+
+    if (destination) {
+      const updated = [destination, ...searchHistory.filter(entry => entry.toLowerCase() !== destination.toLowerCase())].slice(0, 10);
+      setSearchHistory(updated);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      } catch {
+        // storage can be unavailable (private mode); the search still works
+      }
+      setShowSuggestions(false);
+    }
+
+    const params = new URLSearchParams();
+    if (destination) params.set('search', destination);
+    if (tourType && tourType !== 'all') params.set('type', tourType.toUpperCase());
+    const query = params.toString();
+    navigate(`/browse-packages${query ? `?${query}` : ''}`);
+  };
+
+  const updateSuggestions = value => {
+    const query = value.trim();
     if (inputRef.current) {
       const rect = inputRef.current.getBoundingClientRect();
-      setDropdownPosition({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
-        width: rect.width
-      });
+      setDropdownPosition({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: rect.width });
     }
-    // show history when input empty
-    if (!q) {
+    if (!query) {
       setFilteredSuggestions(searchHistory.slice(0, 6));
       setShowSuggestions(true);
       setActiveSuggestionIndex(-1);
-      // cancel any pending requests
       if (abortRef.current) {
         abortRef.current.abort();
         abortRef.current = null;
@@ -107,44 +98,33 @@ const Hero = () => {
       return;
     }
 
-    // debounce API calls
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      // cancel previous request
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-
       try {
+        const encoded = encodeURIComponent(query);
         let suggestions = [];
-        const encoded = encodeURIComponent(q);
-
         if (MAPBOX_TOKEN) {
-          // Mapbox Places API
           const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=8`;
-          const res = await fetch(url, { signal: controller.signal });
-          if (!res.ok) throw new Error('Mapbox error');
-          const data = await res.json();
-          suggestions = (data.features || []).map(f => ({ id: f.id, text: f.place_name }));
+          const response = await fetch(url, { signal: controller.signal });
+          if (!response.ok) throw new Error('Mapbox error');
+          const data = await response.json();
+          suggestions = (data.features || []).map(feature => feature.place_name);
         } else {
-          // OpenStreetMap Nominatim (no API key required)
           const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&addressdetails=1&limit=8`;
-          const res = await fetch(url, { signal: controller.signal, headers: { 'Accept-Language': 'en' } });
-          if (!res.ok) throw new Error('Nominatim error');
-          const data = await res.json();
-          suggestions = (data || []).map(d => ({ id: d.place_id || d.osm_id || d.lat + d.lon, text: d.display_name }));
+          const response = await fetch(url, { signal: controller.signal, headers: { 'Accept-Language': 'en' } });
+          if (!response.ok) throw new Error('Nominatim error');
+          const data = await response.json();
+          suggestions = (data || []).map(item => item.display_name);
         }
-
-        // Merge history results that start with query to show first
-        const historyMatches = searchHistory.filter(h => h.toLowerCase().startsWith(q.toLowerCase()));
-        const mergedTexts = [...new Set([...historyMatches, ...suggestions.map(s => s.text)])].slice(0, 8);
-        setFilteredSuggestions(mergedTexts);
+        const historyMatches = searchHistory.filter(entry => entry.toLowerCase().startsWith(query.toLowerCase()));
+        setFilteredSuggestions([...new Set([...historyMatches, ...suggestions])].slice(0, 8));
         setShowSuggestions(true);
         setActiveSuggestionIndex(-1);
-      } catch (err) {
-        if (err.name === 'AbortError') return; // ignore aborted
-        console.error('Places lookup failed', err);
-        // fallback: show history
+      } catch (error) {
+        if (error.name === 'AbortError') return;
         setFilteredSuggestions(searchHistory.slice(0, 6));
         setShowSuggestions(true);
       } finally {
@@ -153,191 +133,169 @@ const Hero = () => {
     }, 300);
   };
 
-  const handleDestinationChange = (e) => {
-    const value = e.target.value;
-    setSearchData({...searchData, destination: value});
+  const handleDestinationChange = event => {
+    const value = event.target.value;
+    setSearchData(current => ({ ...current, destination: value }));
     updateSuggestions(value);
   };
 
-  const handleSuggestionClick = (val) => {
-    setSearchData({...searchData, destination: val});
+  const chooseSuggestion = value => {
+    setSearchData(current => ({ ...current, destination: value }));
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
   };
 
-  const handleDestinationKeyDown = (e) => {
+  const handleDestinationKeyDown = event => {
     if (!showSuggestions) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveSuggestionIndex(i => Math.min(i + 1, filteredSuggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveSuggestionIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSuggestionIndex(index => Math.min(index + 1, filteredSuggestions.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSuggestionIndex(index => Math.max(index - 1, 0));
+    } else if (event.key === 'Enter') {
       if (activeSuggestionIndex >= 0 && filteredSuggestions[activeSuggestionIndex]) {
-        e.preventDefault();
-        handleSuggestionClick(filteredSuggestions[activeSuggestionIndex]);
+        event.preventDefault();
+        chooseSuggestion(filteredSuggestions[activeSuggestionIndex]);
       }
-    } else if (e.key === 'Escape') {
+    } else if (event.key === 'Escape') {
       setShowSuggestions(false);
       setActiveSuggestionIndex(-1);
     }
   };
 
+  const scrollToPackages = event => {
+    event.preventDefault();
+    document.getElementById('packages')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-visible pt-16">
-      {/* Enhanced Background with Overlay */}
-      <div className="absolute inset-0 z-0">
-        <div 
+    <section id="home" aria-labelledby="hero-heading" className="relative isolate flex min-h-[calc(100vh-4rem)] items-center overflow-hidden pt-16">
+      {/* Photo with a layered scrim so the text stays readable in both modes. */}
+      <div className="absolute inset-0 -z-10">
+        <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: "url('https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80')",
-          }}
+          style={{ backgroundImage: "url('https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80')" }}
         />
-        {/* Light mode overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/50 via-green-600/40 to-emerald-600/70 dark:from-blue-600/50 dark:via-green-600/40 dark:to-emerald-600/50"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/45 to-black/75" />
+        <div className="absolute inset-0 bg-gradient-to-r from-brand-strong/70 via-transparent to-transparent" />
       </div>
 
-      {/* Animated Floating Circles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-white/10 rounded-full filter blur-3xl animate-float"></div>
-        <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-emerald-300/10 rounded-full filter blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
-        <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-blue-300/10 rounded-full filter blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white -mt-16 sm:-mt-20">
-        <div className="flex justify-center mb-2 animate-scale-in">
-          <img src="/tripbloom_logo.svg" alt="TripBloom" className="w-44 h-44 sm:w-52 sm:h-52 lg:w-60 lg:h-60 animate-float hover:scale-110 transition-transform duration-300" />
-        </div>
-        <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold mb-3 animate-fade-in-up" style={{textShadow: '0 4px 12px rgba(0, 0, 0, 0.8), 0 2px 4px rgba(0, 0, 0, 0.6)'}}>
-          Where Every Journey Blossoms
-        </h1>
-        <p className="text-xl sm:text-2xl mb-5 max-w-3xl mx-auto animate-fade-in-up" style={{animationDelay: '0.2s', textShadow: '0 3px 8px rgba(0, 0, 0, 0.8), 0 1px 3px rgba(0, 0, 0, 0.6)'}}>
-          Plan your dream personal or group tour with ease and safety.
-        </p>
-
-        {/* CTA Buttons: single centered CTA */}
-        <div className="flex justify-center mb-6 animate-fade-in-up" style={{animationDelay: '0.4s'}}>
-          <a
-            href="#packages"
-            className="group relative bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 text-white px-10 py-4 rounded-lg font-bold text-lg transition-all duration-300 shadow-2xl transform hover:-translate-y-2 hover:scale-105 overflow-hidden mx-auto"
-            onClick={(e) => {
-              e.preventDefault();
-              document.getElementById('packages')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-          >
-            <span className="relative z-10 flex items-center justify-center gap-2">
-              Explore Packages
-              <svg className="w-5 h-5 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
-            </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-teal-500 via-green-500 to-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-          </a>
+      <div className="relative mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-3xl text-center text-white">
+          <p className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider backdrop-blur">
+            <LuUsers aria-hidden="true" className="h-4 w-4" />
+            Personal and group tours
+          </p>
+          <h1 id="hero-heading" className="mt-5 font-display text-4xl font-bold leading-tight sm:text-5xl lg:text-6xl">
+            Where every journey blossoms
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-lg text-white/90 sm:text-xl">
+            Plan a personal tour around your dates, or join a group departure with everything arranged for you.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a href="#packages" onClick={scrollToPackages} className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-on-brand shadow-lg transition-colors hover:opacity-90">
+              Explore packages
+              <LuArrowRight aria-hidden="true" className="h-5 w-5" />
+            </a>
+            <button type="button" onClick={() => navigate('/browse-packages?type=GROUP')} className="inline-flex min-h-[48px] items-center justify-center rounded-lg border border-white/50 bg-white/10 px-6 text-base font-semibold text-white backdrop-blur transition-colors hover:bg-white/20">
+              Group departures
+            </button>
+          </div>
         </div>
 
-        {/* Enhanced Search Bar with Glass Effect */}
-        <div className="max-w-4xl mx-auto bg-white/95 dark:bg-gray-800/95 backdrop-filter backdrop-blur-lg rounded-2xl shadow-2xl p-6 animate-fade-in-up hover-glow border border-white/20" style={{animationDelay: '0.6s'}}>
-          <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Destination */}
-            <div className="relative" ref={suggRef}>
-              <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2 text-left">
-                <FaMapMarkerAlt className="inline mr-2" />
-                Destination
-              </label>
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder="Where to?"
-                value={searchData.destination}
-                onChange={handleDestinationChange}
-                onKeyDown={handleDestinationKeyDown}
-                onFocus={() => updateSuggestions(searchData.destination || '')}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-800"
-                aria-autocomplete="list"
-                aria-controls="destination-suggestions"
-              />
-            </div>
-
-            {/* Type */}
-            <div>
-              <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2 text-left">
-                Tour Type
-              </label>
-              <select
-                value={searchData.type}
-                onChange={(e) => setSearchData({...searchData, type: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-800"
-              >
-                <option value="personal">Personal Tour</option>
-                <option value="group">Group Tour</option>
-              </select>
-            </div>
-
-            {/* Dates */}
-            <div>
-              <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2 text-left">
-                <FaCalendarAlt className="inline mr-2" />
-                Dates
-              </label>
-              <input
-                type="date"
-                value={searchData.dates}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const today = new Date().toISOString().split('T')[0];
-                  if (val && val < today) {
-                    setSearchData({...searchData, dates: today});
-                  } else {
-                    setSearchData({...searchData, dates: val});
-                  }
-                }}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-gray-800"
-              />
-            </div>
-
-            {/* Search Button */}
-            <div className="flex items-end">
-              <button
-                type="submit"
-                className="w-full bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transition-all duration-300 flex items-center justify-center gap-2"
-              >
-                <FaSearch />
-                Search
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* Suggestions Portal - renders at document.body level */}
-      {showSuggestions && filteredSuggestions.length > 0 && ReactDOM.createPortal(
-        <ul 
-          id="destination-suggestions" 
-          ref={suggRef}
-          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-auto z-[10000]"
-          style={{
-            position: 'absolute',
-            top: `${dropdownPosition.top + 8}px`,
-            left: `${dropdownPosition.left}px`,
-            width: `${dropdownPosition.width}px`,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
-          }}
+        {/* Search */}
+        <form
+          onSubmit={handleSearch}
+          role="search"
+          aria-label="Find a tour"
+          className="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-4 rounded-2xl glass p-4 text-text shadow-2xl sm:p-5 md:grid-cols-12"
         >
-          {filteredSuggestions.map((s, idx) => (
-            <li
-              key={s}
-              onClick={() => handleSuggestionClick(s)}
-              onMouseEnter={() => setActiveSuggestionIndex(idx)}
-              className={`px-4 py-3 cursor-pointer text-gray-800 dark:text-gray-200 ${idx === activeSuggestionIndex ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+          <div ref={fieldRef} className="relative md:col-span-5">
+            <label htmlFor={ids.destination} className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-text">
+              <LuMapPin aria-hidden="true" className="h-4 w-4 text-brand" />
+              Destination
+            </label>
+            <input
+              ref={inputRef}
+              id={ids.destination}
+              type="text"
+              autoComplete="off"
+              placeholder="Where to?"
+              value={searchData.destination}
+              onChange={handleDestinationChange}
+              onKeyDown={handleDestinationKeyDown}
+              onFocus={() => updateSuggestions(searchData.destination || '')}
+              className={fieldClass}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={showSuggestions && filteredSuggestions.length > 0}
+              aria-controls={ids.list}
+              aria-activedescendant={activeSuggestionIndex >= 0 ? `${ids.list}-${activeSuggestionIndex}` : undefined}
+            />
+          </div>
+
+          <div className="md:col-span-3">
+            <label htmlFor={ids.type} className="mb-1.5 block text-sm font-medium text-text">Tour type</label>
+            <select
+              id={ids.type}
+              value={searchData.type}
+              onChange={event => setSearchData(current => ({ ...current, type: event.target.value }))}
+              className={fieldClass}
             >
-              {s}
+              <option value="personal">Personal tour</option>
+              <option value="group">Group tour</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label htmlFor={ids.dates} className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-text">
+              <LuCalendar aria-hidden="true" className="h-4 w-4 text-brand" />
+              Dates
+            </label>
+            <input
+              id={ids.dates}
+              type="date"
+              value={searchData.dates}
+              min={todayString()}
+              onChange={event => {
+                const value = event.target.value;
+                setSearchData(current => ({ ...current, dates: value && value < todayString() ? todayString() : value }));
+              }}
+              className={fieldClass}
+            />
+          </div>
+
+          <div className="flex items-end md:col-span-2">
+            <Button type="submit" size="lg" icon={LuSearch} className="w-full">Search</Button>
+          </div>
+        </form>
+      </div>
+
+      {showSuggestions && filteredSuggestions.length > 0 && ReactDOM.createPortal(
+        <ul
+          id={ids.list}
+          ref={listRef}
+          role="listbox"
+          className="fixed z-[10000] max-h-60 overflow-auto rounded-lg border border-border bg-surface text-text shadow-xl"
+          style={{ top: `${dropdownPosition.top - window.scrollY + 8}px`, left: `${dropdownPosition.left - window.scrollX}px`, width: `${dropdownPosition.width}px` }}
+        >
+          {filteredSuggestions.map((suggestion, index) => (
+            <li
+              key={suggestion}
+              id={`${ids.list}-${index}`}
+              role="option"
+              aria-selected={index === activeSuggestionIndex}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => chooseSuggestion(suggestion)}
+              onMouseEnter={() => setActiveSuggestionIndex(index)}
+              className={`cursor-pointer px-4 py-3 text-sm ${index === activeSuggestionIndex ? 'bg-surface-muted' : 'hover:bg-surface-muted'}`}
+            >
+              {suggestion}
             </li>
           ))}
         </ul>,
-        document.body
+        document.body,
       )}
     </section>
   );

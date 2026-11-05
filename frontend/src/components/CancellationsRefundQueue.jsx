@@ -1,19 +1,39 @@
+import { LuCalendarDays, LuCalendarX, LuCheck, LuCircleUser, LuDollarSign, LuEye, LuFilter, LuInfo, LuMail, LuPackage, LuSearch, LuShield, LuTriangleAlert, LuUser, LuUsers, LuX } from 'react-icons/lu';
+import { userMessage } from '../utils/errorMessage.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  FaDollarSign, FaSearch, FaEye, FaCheck, FaTimes, FaExclamationTriangle,
-  FaFilter, FaUserCircle, FaUserShield, FaCalendarTimes, FaInfoCircle
-} from 'react-icons/fa';
+import { AdminTable, thClass, tdClass } from './admin/AdminPrimitives.jsx';
+import { bookingLabel } from '../utils/bookingCode.js';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import Badge from './ui/Badge.jsx';
+import { DetailAmount, DetailFact, DetailSection, DetailText, formatBDT, formatDetailDate } from './admin/DetailPrimitives.jsx';
+import { isRefundRecorded, refundStatusOf } from '../utils/refundState.js';
+import FormField, { fieldAria, inputClass } from './ui/FormField.jsx';
+import { notifyAdminDataChanged } from '../utils/adminEvents.js';
+
+
+// Refund statuses in plain words. Only the first two still need money to be sent.
+const STATUS_LABEL = { PENDING_REFUND: 'Refund due', PARTIAL_REFUND: 'Partly refunded', REFUNDED: 'Refunded', NO_REFUND: 'No refund due' };
+const OPEN_STATUSES = ['PENDING_REFUND', 'PARTIAL_REFUND'];
 
 const CancellationsRefundQueue = () => {
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'pending', 'refunded'
   const [initiatorFilter, setInitiatorFilter] = useState('all'); // 'all', 'customer', 'admin'
   const [reasonFilter, setReasonFilter] = useState('all'); // 'all', 'departure_cancelled', 'customer_request'
   const [selectedRefund, setSelectedRefund] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  // Recording a refund happens in an in-app dialog: the admin sees the amount due and any refusal reason.
+  const [refundTarget, setRefundTarget] = useState(null);
+  const [refundRef, setRefundRef] = useState('');
+  const [refundNotes, setRefundNotes] = useState('');
+  const [refundError, setRefundError] = useState('');
+  const [refunding, setRefunding] = useState(false);
 
   useEffect(() => {
     fetchRefunds();
@@ -23,7 +43,7 @@ const CancellationsRefundQueue = () => {
     setLoading(true);
     try {
       // Fetch all bookings and filter for cancelled ones
-      const bookingsRes = await axios.get('/api/bookings').catch(() => ({ data: { bookings: [] } }));
+      const bookingsRes = await axios.get('/api/bookings');
       const allBookings = bookingsRes.data.bookings || [];
 
       // Filter cancelled bookings where customer actually paid money
@@ -34,7 +54,7 @@ const CancellationsRefundQueue = () => {
         
         // Calculate total paid amount
         const totalPaid = (booking.payments || [])
-          .filter(p => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
+          .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
           .reduce((sum, p) => sum + (p.amount || 0), 0);
         
         // Only show if customer actually paid money
@@ -62,20 +82,17 @@ const CancellationsRefundQueue = () => {
           try {
             // Calculate total paid
             const totalPaid = (booking.payments || [])
-              .filter(p => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
+              .filter(p => p.status === 'SUCCESS' && p.method !== 'REFUND')
               .reduce((sum, p) => sum + (p.amount || 0), 0);
             
             const refundAmount = booking.cancellation?.refundAmount || 0;
-            const isRefundProcessed = booking.status === 'REFUNDED' || booking.cancellation?.refundProcessed;
+            const isRefundProcessed = isRefundRecorded(booking);
             
             // Calculate refunded so far from refund payments
             const refundedSoFar = isRefundProcessed ? refundAmount : 0;
             
             // Determine refund status
-            let refundStatus = 'PENDING_REFUND';
-            if (isRefundProcessed) {
-              refundStatus = 'REFUNDED';
-            }
+            const refundStatus = refundStatusOf(booking);
 
             // Determine initiator (customer vs admin)
             const initiator = booking.cancellation?.cancelledBy 
@@ -151,120 +168,46 @@ const CancellationsRefundQueue = () => {
       setRefunds(validRefunds);
     } catch (err) {
       console.error('Failed to fetch refunds:', err);
-      // Generate mock data for demonstration
-      generateMockRefunds();
+      setError('Unable to load refund records. Please retry.');
     }
     setLoading(false);
   };
 
-  const generateMockRefunds = () => {
-    const mockData = [
-      {
-        _id: 'BK001',
-        customerId: { fullName: 'John Doe', email: 'john@example.com' },
-        packageId: { title: 'Paris Adventure 5D/4N' },
-        totalAmount: 2500,
-        refundAmount: 2000,
-        refundedSoFar: 2000,
-        refundStatus: 'REFUNDED',
-        initiator: 'customer',
-        isDepartureCancelled: false,
-        isPartialRefund: false,
-        cancellationReason: 'Personal emergency',
-        requestedDate: new Date('2024-11-20'),
-        startDate: new Date('2024-12-15')
-      },
-      {
-        _id: 'BK002',
-        customerId: { fullName: 'Sarah Smith', email: 'sarah@example.com' },
-        packageId: { title: 'Bali Beach Retreat 7D/6N' },
-        totalAmount: 3200,
-        refundAmount: 2560,
-        refundedSoFar: 1500,
-        refundStatus: 'PARTIAL_REFUND',
-        initiator: 'customer',
-        isDepartureCancelled: false,
-        isPartialRefund: true,
-        cancellationReason: 'Schedule conflict',
-        requestedDate: new Date('2024-11-22'),
-        startDate: new Date('2024-12-20')
-      },
-      {
-        _id: 'BK003',
-        customerId: { fullName: 'Mike Johnson', email: 'mike@example.com' },
-        packageId: { title: 'Thailand Explorer 6D/5N' },
-        totalAmount: 1800,
-        refundAmount: 1800,
-        refundedSoFar: 0,
-        refundStatus: 'PENDING_REFUND',
-        initiator: 'admin',
-        isDepartureCancelled: true,
-        isPartialRefund: false,
-        cancellationReason: 'Departure cancelled by operator',
-        requestedDate: new Date('2024-11-23'),
-        startDate: new Date('2024-12-10')
-      },
-      {
-        _id: 'BK004',
-        customerId: { fullName: 'Emma Wilson', email: 'emma@example.com' },
-        packageId: { title: 'Dubai Luxury Tour 4D/3N' },
-        totalAmount: 4500,
-        refundAmount: 3600,
-        refundedSoFar: 0,
-        refundStatus: 'PENDING_REFUND',
-        initiator: 'customer',
-        isDepartureCancelled: false,
-        isPartialRefund: false,
-        cancellationReason: 'Medical reasons',
-        requestedDate: new Date('2024-11-24'),
-        startDate: new Date('2025-01-05')
-      },
-      {
-        _id: 'BK005',
-        customerId: { fullName: 'David Brown', email: 'david@example.com' },
-        packageId: { title: 'Singapore City Break 3D/2N' },
-        totalAmount: 1500,
-        refundAmount: 1500,
-        refundedSoFar: 0,
-        refundStatus: 'PENDING_REFUND',
-        initiator: 'admin',
-        isDepartureCancelled: true,
-        isPartialRefund: false,
-        cancellationReason: 'Departure cancelled by operator',
-        requestedDate: new Date('2024-11-24'),
-        startDate: new Date('2024-12-05')
-      }
-    ];
-    setRefunds(mockData);
+  // Money still to send back on a booking: refund due less what has already been refunded.
+  const refundDue = (row) => Math.max(0, (row.refundAmount || 0) - (row.refundedSoFar || 0));
+
+  const openRefund = (row) => {
+    setRefundTarget(row);
+    setRefundRef('');
+    setRefundNotes('');
+    setRefundError('');
   };
 
-  const processRefund = async (bookingId, amount) => {
+  const submitRefund = async () => {
+    if (!refundTarget) return;
+    const reference = refundRef.trim();
+    if (!reference) {
+      setRefundError('Enter the reference of the transfer you made to the customer.');
+      return;
+    }
+    setRefunding(true);
+    setRefundError('');
     try {
-      // Call backend API to process refund
-      const adminId = localStorage.getItem('userId');
-      const res = await axios.post(`/api/admin/bookings/${bookingId}/refund`, { adminId });
-      
-      if (res.data.success) {
-        // Update the refund status to REFUNDED instead of removing
-        setRefunds(refunds.map(r => {
-          if (r._id === bookingId) {
-            return {
-              ...r,
-              refundStatus: 'REFUNDED',
-              status: 'REFUNDED'
-            };
-          }
-          return r;
-        }));
-        
-        // Refresh to get updated data from backend
+      const res = await axios.post(`/api/admin/bookings/${refundTarget._id}/refund`, {
+        transactionRef: reference,
+        notes: refundNotes.trim(),
+      });
+      if (res.data?.success) {
+        setRefundTarget(null);
         fetchRefunds();
-        
-        alert(`Refund processed successfully! $${res.data.refundAmount} refunded to ${res.data.booking.customerId.fullName}`);
+        notifyAdminDataChanged();
+        notify.message(`Refund of BDT ${Number(res.data.refundAmount || 0).toLocaleString()} recorded.`);
       }
     } catch (err) {
-      console.error('Failed to process refund:', err);
-      alert('Failed to process refund: ' + (err.response?.data?.message || err.message));
+      console.error('Failed to record refund:', err);
+      setRefundError(userMessage(err, 'The refund could not be recorded. Nothing changed; please try again.'));
+    } finally {
+      setRefunding(false);
     }
   };
 
@@ -276,7 +219,8 @@ const CancellationsRefundQueue = () => {
 
     const matchesStatus = statusFilter === 'all' || 
       (statusFilter === 'pending' && ['PENDING_REFUND', 'PARTIAL_REFUND'].includes(refund.refundStatus)) ||
-      (statusFilter === 'refunded' && refund.refundStatus === 'REFUNDED');
+      (statusFilter === 'refunded' && refund.refundStatus === 'REFUNDED') ||
+      (statusFilter === 'none' && refund.refundStatus === 'NO_REFUND');
 
     const matchesInitiator = initiatorFilter === 'all' || refund.initiator === initiatorFilter;
 
@@ -289,11 +233,12 @@ const CancellationsRefundQueue = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      PENDING_REFUND: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-      PARTIAL_REFUND: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
-      REFUNDED: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+      PENDING_REFUND: 'bg-warning/10 text-warning',
+      PARTIAL_REFUND: 'bg-warning/10 text-warning',
+      REFUNDED: 'bg-success/10 text-success',
+      NO_REFUND: 'bg-surface-muted text-text-muted'
     };
-    return colors[status] || 'bg-gray-100 text-gray-700';
+    return colors[status] || 'bg-surface-muted text-text';
   };
 
   const formatDate = (date) => {
@@ -312,26 +257,27 @@ const CancellationsRefundQueue = () => {
     .reduce((sum, r) => sum + (r.refundedSoFar || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-8">
+    <div className="space-y-6">
+      {error && <p role="alert" className="text-danger">{error}</p>}
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+        <div className="bg-surface rounded-2xl shadow-lg p-6 border border-border">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-              <FaDollarSign className="mr-3 text-red-600 dark:text-red-400" />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <h2 className="text-2xl font-bold text-text flex items-center">
+              <LuDollarSign aria-hidden="true" className="mr-3 text-danger" />
               Cancellations & Refund Queue
             </h2>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="text-right">
-                <div className="text-xs text-gray-600 dark:text-gray-400">Pending Refunds</div>
-                <div className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                  ${totalPendingAmount.toLocaleString()}
+                <div className="text-xs text-text-muted">Pending Refunds</div>
+                <div className="text-lg font-bold text-warning">
+                  BDT {totalPendingAmount.toLocaleString()}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-gray-600 dark:text-gray-400">Total Refunded</div>
-                <div className="text-lg font-bold text-green-600 dark:text-green-400">
-                  ${totalRefundedAmount.toLocaleString()}
+                <div className="text-xs text-text-muted">Total Refunded</div>
+                <div className="text-lg font-bold text-success">
+                  BDT {totalRefundedAmount.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -340,28 +286,29 @@ const CancellationsRefundQueue = () => {
           {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="relative">
-              <FaSearch className="absolute left-3 top-3 text-gray-400" />
+              <LuSearch aria-hidden="true" className="absolute left-3 top-3 text-text-muted" />
               <input
                 type="text"
                 placeholder="Search by ID, customer, package..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-surface text-text focus:ring-2 focus:ring-brand"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
             >
               <option value="all">All Status</option>
               <option value="pending">Pending/Partial</option>
               <option value="refunded">Refunded</option>
+              <option value="none">No refund due</option>
             </select>
             <select
               value={initiatorFilter}
               onChange={(e) => setInitiatorFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
             >
               <option value="all">All Initiators</option>
               <option value="customer">Customer Requested</option>
@@ -370,7 +317,7 @@ const CancellationsRefundQueue = () => {
             <select
               value={reasonFilter}
               onChange={(e) => setReasonFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
             >
               <option value="all">All Reasons</option>
               <option value="departure_cancelled">Departure Cancelled</option>
@@ -382,117 +329,117 @@ const CancellationsRefundQueue = () => {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Booking ID</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Customer</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Package</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Amount</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Requested Refund</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Refunded</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Status</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Initiator</th>
-                  <th className="text-center py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Actions</th>
+                <tr className="border-b-2 border-border">
+                  <th className={thClass}>Booking ID</th>
+                  <th className={thClass}>Customer</th>
+                  <th className={thClass}>Package</th>
+                  <th className={thClass}>Amount</th>
+                  <th className={thClass}>Requested Refund</th>
+                  <th className={thClass}>Refunded</th>
+                  <th className={thClass}>Status</th>
+                  <th className={thClass}>Initiator</th>
+                  <th className={thClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRefunds.map((refund) => (
                   <tr
                     key={refund._id}
-                    className={`border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                      refund.isDepartureCancelled ? 'bg-red-50/30 dark:bg-red-900/10' : ''
+                    className={`border-b border-border hover:bg-surface-muted transition-colors ${
+                      refund.isDepartureCancelled ? 'bg-danger/10' : ''
                     }`}
                   >
-                    <td className="py-4 px-4">
-                      <div className="font-mono text-sm font-semibold text-gray-900 dark:text-white">
-                        #{refund._displayId || refund._id}
+                    <td className={tdClass}>
+                      <div className="font-mono text-sm font-semibold text-text">
+                        {bookingLabel(refund)}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-xs text-text-muted">
                         {formatDate(refund.requestedDate)}
                       </div>
                     </td>
-                    <td className="py-4 px-4">
-                      <div className="font-medium text-gray-900 dark:text-white">
+                    <td className={tdClass}>
+                      <div className="font-medium text-text">
                         {refund.customerId?.fullName || 'N/A'}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-xs text-text-muted">
                         {refund.customerId?.email || ''}
                       </div>
                     </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm text-gray-900 dark:text-white">
+                    <td className={tdClass}>
+                      <div className="text-sm text-text">
                         {refund.packageId?.title || 'Package'}
                       </div>
                       {refund.isDepartureCancelled && (
-                        <div className="flex items-center text-xs text-red-600 dark:text-red-400 mt-1">
-                          <FaCalendarTimes className="mr-1" />
+                        <div className="flex items-center text-xs text-danger mt-1">
+                          <LuCalendarX aria-hidden="true" className="mr-1" />
                           Departure cancelled
                         </div>
                       )}
                     </td>
-                    <td className="py-4 px-4 text-center">
-                      <div className="font-semibold text-gray-900 dark:text-white">
-                        ${(refund.totalAmount || 0).toLocaleString()}
+                    <td className={tdClass}>
+                      <div className="font-semibold text-text">
+                        BDT {(refund.totalAmount || 0).toLocaleString()}
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-center">
-                      <div className="font-semibold text-orange-600 dark:text-orange-400">
-                        ${(refund.refundAmount || 0).toLocaleString()}
+                    <td className={tdClass}>
+                      <div className="font-semibold text-warning">
+                        BDT {(refund.refundAmount || 0).toLocaleString()}
                       </div>
                       {refund.totalAmount > 0 && refund.refundAmount > 0 && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div className="text-xs text-text-muted">
                           {((refund.refundAmount / refund.totalAmount) * 100).toFixed(0)}% of total
                         </div>
                       )}
                     </td>
-                    <td className="py-4 px-4 text-center">
-                      <div className="font-semibold text-green-600 dark:text-green-400">
-                        ${(refund.refundedSoFar || 0).toLocaleString()}
+                    <td className={tdClass}>
+                      <div className="font-semibold text-success">
+                        BDT {(refund.refundedSoFar || 0).toLocaleString()}
                       </div>
                       {refund.isPartialRefund && (
-                        <div className="text-xs text-orange-600 dark:text-orange-400">
-                          ${((refund.refundAmount || 0) - (refund.refundedSoFar || 0)).toLocaleString()} pending
+                        <div className="text-xs text-warning">
+                          BDT {((refund.refundAmount || 0) - (refund.refundedSoFar || 0)).toLocaleString()} pending
                         </div>
                       )}
                     </td>
-                    <td className="py-4 px-4 text-center">
+                    <td className={tdClass}>
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(refund.refundStatus)}`}>
-                        {refund.refundStatus.replace('_', ' ')}
+                        {STATUS_LABEL[refund.refundStatus] || refund.refundStatus}
                       </span>
                     </td>
-                    <td className="py-4 px-4 text-center">
+                    <td className={tdClass}>
                       <div className="flex items-center justify-center">
                         {refund.initiator === 'customer' ? (
-                          <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 rounded-full text-xs font-semibold">
-                            <FaUserCircle className="mr-1" />
+                          <span className="inline-flex items-center px-2 py-1 bg-info/10 text-info rounded-full text-xs font-semibold">
+                            <LuCircleUser aria-hidden="true" className="mr-1" />
                             Customer
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400 rounded-full text-xs font-semibold">
-                            <FaUserShield className="mr-1" />
+                          <span className="inline-flex items-center px-2 py-1 bg-info/10 text-info rounded-full text-xs font-semibold">
+                            <LuShield aria-hidden="true" className="mr-1" />
                             Admin
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="py-4 px-4">
+                    <td className={tdClass}>
                       <div className="flex items-center justify-center space-x-2">
                         <button
                           onClick={() => {
                             setSelectedRefund(refund);
                             setShowDetailsModal(true);
                           }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                          className="p-2 text-info hover:bg-info/10 rounded transition-colors"
                           title="View Details"
                         >
-                          <FaEye />
+                          <LuEye aria-hidden="true" />
                         </button>
-                        {refund.refundStatus !== 'REFUNDED' && (
+                        {OPEN_STATUSES.includes(refund.refundStatus) && (
                           <button
-                            onClick={() => processRefund(refund._id, refund.refundAmount - refund.refundedSoFar)}
-                            className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
-                            title="Process Refund"
+                            onClick={() => openRefund(refund)}
+                            className="p-2 text-success hover:bg-success/10 rounded transition-colors"
+                            title="Record completed refund"
                           >
-                            <FaCheck />
+                            <LuCheck aria-hidden="true" />
                           </button>
                         )}
                       </div>
@@ -503,7 +450,7 @@ const CancellationsRefundQueue = () => {
             </table>
 
             {filteredRefunds.length === 0 && !loading && (
-              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <div className="text-center py-12 text-text-muted">
                 {searchTerm || statusFilter !== 'all' || initiatorFilter !== 'all' || reasonFilter !== 'all'
                   ? 'No refunds match your filters'
                   : 'No refund requests found'}
@@ -512,30 +459,30 @@ const CancellationsRefundQueue = () => {
           </div>
 
           {loading && (
-            <div className="text-center py-8 text-primary font-semibold">Loading...</div>
+            <div className="text-center py-8 text-brand font-semibold">Loading...</div>
           )}
 
           {/* Stats Summary */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg">
-              <div className="text-sm text-blue-600 dark:text-blue-400 font-semibold">Total Requests</div>
-              <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{refunds.length}</div>
+            <div className="p-4 bg-gradient-to-br from-info/10 to-info/5 rounded-lg">
+              <div className="text-sm text-info font-semibold">Total Requests</div>
+              <div className="text-2xl font-bold text-info">{refunds.length}</div>
             </div>
-            <div className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg">
-              <div className="text-sm text-yellow-600 dark:text-yellow-400 font-semibold">Pending</div>
-              <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">
+            <div className="p-4 bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg">
+              <div className="text-sm text-warning font-semibold">Pending</div>
+              <div className="text-2xl font-bold text-warning">
                 {refunds.filter(r => r.refundStatus === 'PENDING_REFUND').length}
               </div>
             </div>
-            <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg">
-              <div className="text-sm text-orange-600 dark:text-orange-400 font-semibold">Partial</div>
-              <div className="text-2xl font-bold text-orange-900 dark:text-orange-300">
+            <div className="p-4 bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg">
+              <div className="text-sm text-warning font-semibold">Partial</div>
+              <div className="text-2xl font-bold text-warning">
                 {refunds.filter(r => r.refundStatus === 'PARTIAL_REFUND').length}
               </div>
             </div>
-            <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg">
-              <div className="text-sm text-green-600 dark:text-green-400 font-semibold">Completed</div>
-              <div className="text-2xl font-bold text-green-900 dark:text-green-300">
+            <div className="p-4 bg-gradient-to-br from-success/10 to-success/5 rounded-lg">
+              <div className="text-sm text-success font-semibold">Completed</div>
+              <div className="text-2xl font-bold text-success">
                 {refunds.filter(r => r.refundStatus === 'REFUNDED').length}
               </div>
             </div>
@@ -543,80 +490,160 @@ const CancellationsRefundQueue = () => {
         </div>
       </div>
 
-      {/* Details Modal */}
-      {showDetailsModal && selectedRefund && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/70" onClick={() => setShowDetailsModal(false)}></div>
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full shadow-2xl">
-            <button
-              onClick={() => setShowDetailsModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <FaTimes size={20} />
-            </button>
-
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Refund Details</h3>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Booking ID</div>
-                  <div className="font-mono font-semibold text-gray-900 dark:text-white">#{selectedRefund._displayId || selectedRefund._id}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Customer</div>
-                  <div className="font-semibold text-gray-900 dark:text-white">{selectedRefund.customerId?.fullName}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Original Amount</div>
-                  <div className="font-semibold text-gray-900 dark:text-white">${selectedRefund.totalAmount?.toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Requested Refund</div>
-                  <div className="font-semibold text-orange-600 dark:text-orange-400">${selectedRefund.refundAmount?.toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Refunded So Far</div>
-                  <div className="font-semibold text-green-600 dark:text-green-400">${selectedRefund.refundedSoFar?.toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Remaining</div>
-                  <div className="font-semibold text-red-600 dark:text-red-400">
-                    ${(selectedRefund.refundAmount - selectedRefund.refundedSoFar).toLocaleString()}
-                  </div>
-                </div>
+      {/* Refund details */}
+      <Modal
+        open={showDetailsModal && Boolean(selectedRefund)}
+        onClose={() => setShowDetailsModal(false)}
+        title="Refund details"
+        description={selectedRefund ? `${bookingLabel(selectedRefund)} · ${selectedRefund.customerId?.fullName || 'Customer'}` : ''}
+        size="xl"
+        rootClassName="dark"
+        footer={selectedRefund && (
+          <>
+            <Button variant="secondary" onClick={() => setShowDetailsModal(false)}>Close</Button>
+            {OPEN_STATUSES.includes(selectedRefund.refundStatus) && (
+              <Button
+                icon={LuCheck}
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  openRefund(selectedRefund);
+                }}
+              >
+                Record completed refund
+              </Button>
+            )}
+          </>
+        )}
+      >
+        {selectedRefund && (() => {
+          const remaining = Math.max(0, (selectedRefund.refundAmount || 0) - (selectedRefund.refundedSoFar || 0));
+          const refunded = selectedRefund.refundStatus === 'REFUNDED';
+          const noRefund = selectedRefund.refundStatus === 'NO_REFUND';
+          const ledger = [...(selectedRefund.payments || [])].sort((a, b) => new Date(a.paidAt || a.submittedAt || a.createdAt || 0) - new Date(b.paidAt || b.submittedAt || b.createdAt || 0));
+          return (
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge tone={refunded ? 'success' : noRefund ? 'neutral' : 'warning'}>{refunded ? 'Refunded' : noRefund ? 'No refund due' : 'Refund pending'}</Badge>
+                <span className="text-xs text-text-muted">Cancelled {formatDetailDate(selectedRefund.cancellation?.cancelledAt || selectedRefund.updatedAt)}</span>
               </div>
 
-              <div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Cancellation Reason</div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-900 dark:text-white">
-                  {selectedRefund.cancellationReason}
-                </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <DetailAmount label="Paid by customer" value={formatBDT(selectedRefund.totalPaid)} />
+                <DetailAmount label="Refund due" value={formatBDT(selectedRefund.refundAmount)} tone="warning" />
+                <DetailAmount label="Refunded so far" value={formatBDT(selectedRefund.refundedSoFar)} tone="success" />
+                <DetailAmount label="Remaining" value={formatBDT(remaining)} tone={remaining > 0 ? 'danger' : 'success'} />
               </div>
 
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setShowDetailsModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
-                >
-                  Close
-                </button>
-                {selectedRefund.refundStatus !== 'REFUNDED' && (
-                  <button
-                    onClick={() => {
-                      processRefund(selectedRefund._id, selectedRefund.refundAmount - selectedRefund.refundedSoFar);
-                      setShowDetailsModal(false);
-                    }}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                  >
-                    Process Full Refund
-                  </button>
+              <DetailSection id="refund-facts-heading" title="Booking and cancellation">
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <DetailFact icon={LuUser} label="Customer" value={selectedRefund.customerId?.fullName || 'Not on file'} />
+                  <DetailFact icon={LuMail} label="Email" value={selectedRefund.customerId?.email || 'Not on file'} />
+                  <DetailFact icon={LuPackage} label="Package" value={selectedRefund.packageId?.title || 'Not on file'} />
+                  <DetailFact icon={LuUsers} label="Travellers" value={selectedRefund.numTravelers ?? '—'} />
+                  <DetailFact icon={LuUser} label="Cancelled by" value={selectedRefund.initiator === 'admin' ? 'Administrator' : 'Customer'} />
+                  <DetailFact icon={LuCalendarDays} label="Cancelled on" value={formatDetailDate(selectedRefund.cancellation?.cancelledAt || selectedRefund.updatedAt)} />
+                </dl>
+              </DetailSection>
+
+              <DetailSection id="refund-reason-heading" title="Cancellation reason">
+                <DetailText>{selectedRefund.cancellationReason || 'No reason recorded.'}</DetailText>
+                {selectedRefund.isDepartureCancelled && (
+                  <p className="flex items-center gap-2 text-sm text-warning"><LuTriangleAlert aria-hidden="true" className="h-4 w-4" />The group departure was cancelled, so this refund is owed in full.</p>
                 )}
-              </div>
+              </DetailSection>
+
+              {selectedRefund.refundStatus === 'NO_REFUND' && (
+                <p role="status" className="rounded-xl border border-border bg-surface-muted p-4 text-sm text-text">
+                  Nothing is owed on this booking. The cancellation policy gives no refund for this cancellation, so there is nothing to record or send.
+                </p>
+              )}
+
+              <DetailSection id="refund-ledger-heading" title="Payments and refunds">
+                {ledger.length === 0 ? (
+                  <p className="text-sm text-text-muted">No payments are recorded on this booking.</p>
+                ) : (
+                  <AdminTable label="Payments and refunds on this booking" minWidth={620}>
+                    <thead>
+                      <tr>
+                        <th scope="col" className={thClass}>Date</th>
+                        <th scope="col" className={thClass}>Method</th>
+                        <th scope="col" className={thClass}>Reference</th>
+                        <th scope="col" className={thClass}>Amount</th>
+                        <th scope="col" className={thClass}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ledger.map((payment, index) => (
+                        <tr key={payment._id || index}>
+                          <td className={`${tdClass} whitespace-nowrap text-text-muted`}>{formatDetailDate(payment.paidAt || payment.submittedAt || payment.createdAt, false)}</td>
+                          <td className={tdClass}>{payment.method === 'REFUND' ? 'Refund' : payment.method}</td>
+                          <td className={`${tdClass} font-mono text-xs`}>{payment.transactionRef || '—'}</td>
+                          <td className={`${tdClass} whitespace-nowrap font-semibold`}>{formatBDT(payment.amount)}</td>
+                          <td className={tdClass}><Badge tone={payment.status === 'SUCCESS' ? 'success' : payment.status === 'FAILED' ? 'danger' : 'warning'}>{payment.status}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </AdminTable>
+                )}
+              </DetailSection>
             </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Record completed refund */}
+      <Modal
+        open={Boolean(refundTarget)}
+        onClose={() => { if (!refunding) setRefundTarget(null); }}
+        title="Record completed refund"
+        description={refundTarget ? `${bookingLabel(refundTarget)} · ${refundTarget.customerId?.fullName || 'Customer'}` : ''}
+        size="md"
+        rootClassName="dark"
+        footer={refundTarget && (
+          <>
+            <Button variant="secondary" onClick={() => setRefundTarget(null)} disabled={refunding}>Cancel</Button>
+            <Button onClick={submitRefund} loading={refunding} disabled={refunding || refundDue(refundTarget) <= 0}>Record refund</Button>
+          </>
+        )}
+      >
+        {refundTarget && (
+          <div className="space-y-4">
+            <DetailAmount
+              label="Refund to send to the customer"
+              value={formatBDT(refundDue(refundTarget))}
+              tone={refundDue(refundTarget) > 0 ? 'warning' : 'success'}
+              hint="Send this amount outside the platform, then record the transfer reference here."
+            />
+            {refundDue(refundTarget) <= 0 && (
+              <p role="status" className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm text-text">No refund is outstanding on this booking.</p>
+            )}
+            {refundError && <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{refundError}</p>}
+            <FormField id="refund-transaction-ref" label="Transfer reference" required hint="The reference of the transfer you made, for example a bKash or bank transaction ID.">
+              <input
+                {...fieldAria('refund-transaction-ref', { hint: true })}
+                type="text"
+                maxLength={120}
+                value={refundRef}
+                onChange={(e) => setRefundRef(e.target.value)}
+                placeholder="Transaction ID"
+                autoComplete="off"
+                className={inputClass}
+              />
+            </FormField>
+            <FormField id="refund-notes" label="Notes (optional)">
+              <textarea
+                id="refund-notes"
+                rows={3}
+                maxLength={1000}
+                value={refundNotes}
+                onChange={(e) => setRefundNotes(e.target.value)}
+                placeholder="For example: sent to the customer's bKash account"
+                className={`${inputClass} resize-none`}
+              />
+            </FormField>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

@@ -1,15 +1,51 @@
+import { LuX, LuActivity, LuBanknote, LuBell, LuCalendarClock, LuCalendarDays, LuHouse, LuIdCard, LuLayoutDashboard, LuLogOut, LuMail, LuMegaphone, LuMenu, LuRoute, LuSettings, LuStar, LuUndo2, LuWallet } from 'react-icons/lu';
+import { MailIcon, CalendarIcon, ClockIcon, IdCardIcon } from './ui/icons.js';
 import React, { useEffect, useState, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import ManageUsersMenu from './ManageUsersMenu';
-import { 
-  FaUsers, FaRoute, FaChartLine, FaCog, FaSignOutAlt, FaBell, FaSearch, 
-  FaCalendar, FaDollarSign, FaStar, FaEnvelope, FaCalendarAlt, FaEye, FaBullhorn, FaIdCard, FaMoneyBillWave
-} from 'react-icons/fa';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import { useAuth } from '../context/AuthContext';
+import { isRefundPending } from '../utils/refundState.js';
+import { ADMIN_DATA_CHANGED } from '../utils/adminEvents.js';
+
+// Sidebar sections. `menu` marks the group that also shows the Manage Users dropdown.
+const NAV_GROUPS = [
+  { label: 'Overview', items: [
+    { label: 'Dashboard', path: '/admin', icon: LuLayoutDashboard },
+  ] },
+  { label: 'People', menu: true, items: [
+    { label: 'Contact messages', path: '/admin/contacts', icon: LuMail },
+    { label: 'KYC verification', path: '/admin/kyc', icon: LuIdCard, badgeKey: 'kyc' },
+  ] },
+  { label: 'Catalogue', items: [
+    { label: 'Tour packages', path: '/admin/packages', icon: LuRoute },
+    { label: 'Departures', path: '/admin/departures', icon: LuCalendarDays },
+    { label: 'Reviews', path: '/admin/reviews', icon: LuStar },
+  ] },
+  { label: 'Money', items: [
+    { label: 'Payment verification', path: '/admin/payments', icon: LuWallet },
+    { label: 'Refund queue', path: '/admin/refunds', icon: LuUndo2 },
+    { label: 'Date change requests', path: '/admin/date-changes', icon: LuCalendarClock },
+  ] },
+  { label: 'Content & system', items: [
+    { label: 'Announcements', path: '/admin/announcements', icon: LuMegaphone },
+    { label: 'Activity logs', path: '/admin/activity-logs', icon: LuActivity },
+    { label: 'Settings', path: '/admin/settings', icon: LuSettings },
+  ] },
+];
+
+// Badge tone and label for each notification type.
+const NOTIFICATION_TONE = { contact: 'brand', kyc: 'info', datechange: 'info', refund: 'danger', 'review-pending': 'warning', chat: 'success', 'live-chat': 'success' };
+const NOTIFICATION_LABEL = { datechange: 'Date change', 'review-pending': 'Review', chat: 'Chat', 'live-chat': 'Chat', kyc: 'KYC', refund: 'Refund' };
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // On screens narrower than lg the sidebar is a slide-over; it closes when the page changes.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => { setMobileNavOpen(false); }, [location.pathname]);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadList, setUnreadList] = useState([]);
@@ -46,30 +82,83 @@ const AdminLayout = () => {
     return time.toLocaleDateString();
   };
 
+  // Live chat messages from customers and operators that the admin has not seen yet.
+  const liveChatItems = async (adminId) => {
+    try {
+      const usersRes = await axios.get('/api/users').catch(() => ({ data: [] }));
+      const usersList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data.users || []);
+      const nonAdmins = usersList.filter(u => {
+        if (!u) return false;
+        const r = u.role || '';
+        const rs = u.roles || [];
+        const isAdmin = r.toString().toUpperCase() === 'ADMIN' ||
+          (Array.isArray(rs) && rs.some(x => (x || '').toString().toUpperCase() === 'ADMIN'));
+        return !isAdmin;
+      });
+      const seenChats = JSON.parse(localStorage.getItem('seenChatTimestamps') || '{}');
+      const items = [];
+      for (const user of nonAdmins.slice(0, 15)) {
+        try {
+          const qs = new URLSearchParams({ userA: adminId, userB: user._id });
+          const convRes = await axios.get('/api/messages/conversation?' + qs.toString()).catch(() => ({ data: { messages: [] } }));
+          if (!(convRes.data.success && convRes.data.messages && convRes.data.messages.length > 0)) continue;
+          const incoming = convRes.data.messages.filter(m => (m.senderId?._id || m.senderId) !== adminId);
+          if (incoming.length === 0) continue;
+          const lastMsg = incoming[incoming.length - 1];
+          const lastMsgTime = new Date(lastMsg.sentAt).getTime();
+          if (lastMsgTime <= (seenChats[user._id] || 0)) continue;
+          const senderName = lastMsg.senderId?.fullName || lastMsg.senderId?.name || user.fullName || user.name || user.email || 'User';
+          const notifId = `chat-${user._id}`;
+          items.push({
+            id: notifId,
+            type: 'live-chat',
+            icon: <LuMail aria-hidden="true" className="text-info" />,
+            title: `Chat from ${senderName}`,
+            message: (lastMsg.content || '').substring(0, 50) + ((lastMsg.content || '').length > 50 ? '...' : ''),
+            time: new Date(lastMsg.sentAt),
+            action: () => {
+              // Opening the chat marks it as seen and removes it from the bell.
+              const currentSeen = JSON.parse(localStorage.getItem('seenChatTimestamps') || '{}');
+              currentSeen[user._id] = Date.now();
+              localStorage.setItem('seenChatTimestamps', JSON.stringify(currentSeen));
+              dismissNotification(notifId);
+              navigate(`/admin/contacts?chatUserId=${user._id}`);
+            }
+          });
+        } catch (err) {
+          // Skip one conversation that fails; the rest still show.
+        }
+      }
+      return items;
+    } catch (err) {
+      console.debug('Live chat notifications fetch failed', err);
+      return [];
+    }
+  };
+
+  // Builds the whole bell from every source in one pass and replaces the list once. Handled records drop out on the next pass.
   const fetchUnread = async () => {
     try {
       const role = localStorage.getItem('userRole') || '';
-      const roleUpper = (role || '').toUpperCase();
-      
-      // Fetch all notification sources in parallel
-      const [contactsRes, bookingsRes, kycRes] = await Promise.all([
-        axios.get('/api/admin/contacts', { headers: { 'x-user-role': role } }).catch(() => ({ data: { contacts: [] } })),
-        axios.get('/api/bookings').catch(() => ({ data: { bookings: [] } })),
-        axios.get('/api/admin/kyc', { 
-          headers: { 'x-user-role': role } 
-        }).catch(() => ({ data: { kycs: [] } }))
+      const roleUpper = role.toUpperCase();
+      const isAdminLike = roleUpper === 'ADMIN' || roleUpper === 'MODERATOR';
+      const adminId = localStorage.getItem('userId');
+
+      const [contactsRes, bookingsRes, kycRes, reviewsRes] = await Promise.all([
+        axios.get('/api/admin/contacts', { headers: { 'x-user-role': role } }).catch(() => null),
+        axios.get('/api/bookings').catch(() => null),
+        axios.get('/api/admin/kyc', { headers: { 'x-user-role': role } }).catch(() => null),
+        isAdminLike ? axios.get('/api/reviews?status=PENDING').catch(() => null) : Promise.resolve(null),
       ]);
-      
-      const notifications = [];
-      
-      // Contact messages
-      if (contactsRes.data && Array.isArray(contactsRes.data.contacts)) {
-        const unreadContacts = contactsRes.data.contacts.filter(c => !c.handled);
-        unreadContacts.forEach(c => {
-          notifications.push({
+
+      const items = [];
+
+      if (Array.isArray(contactsRes?.data?.contacts)) {
+        contactsRes.data.contacts.filter(c => !c.handled).forEach(c => {
+          items.push({
             id: `contact-${c._id}`,
             type: 'contact',
-            icon: '📧',
+            icon: <MailIcon aria-hidden="true" className="h-4 w-4" />,
             title: c.name,
             message: c.message,
             time: new Date(c.createdAt),
@@ -77,17 +166,15 @@ const AdminLayout = () => {
           });
         });
       }
-      
-      // KYC requests
-      if (kycRes.data && Array.isArray(kycRes.data.kycs)) {
-        const allKYCs = kycRes.data.kycs;
-        const pendingKYCs = allKYCs.filter(k => k.status === 'pending');
-        setPendingKYCCount(pendingKYCs.length); // Set count for menu badge
+
+      if (Array.isArray(kycRes?.data?.kycs)) {
+        const pendingKYCs = kycRes.data.kycs.filter(k => k.status === 'pending');
+        setPendingKYCCount(pendingKYCs.length);
         pendingKYCs.forEach(k => {
-          notifications.push({
+          items.push({
             id: `kyc-${k._id}`,
             type: 'kyc',
-            icon: '🆔',
+            icon: <IdCardIcon aria-hidden="true" className="h-4 w-4" />,
             title: 'KYC Pending Review',
             message: `${k.user?.fullName || k.user?.name || 'Customer'} submitted KYC verification`,
             time: new Date(k.createdAt),
@@ -95,165 +182,58 @@ const AdminLayout = () => {
           });
         });
       }
-      
-      // Date change requests
-      const allBookings = bookingsRes.data.bookings || [];
-      const pendingDateChanges = allBookings.filter(b => 
-        b.dateChangeRequest && b.dateChangeRequest.status === 'PENDING'
-      );
-      pendingDateChanges.forEach(b => {
-        notifications.push({
-          id: `datechange-${b._id}`,
-          type: 'datechange',
-          icon: '📅',
-          title: 'Date Change Request',
-          message: `${b.customerId?.fullName || 'Customer'} requested to change booking date`,
-          time: new Date(b.dateChangeRequest.requestedAt),
-          action: () => navigate('/admin/date-changes')
+
+      const allBookings = Array.isArray(bookingsRes?.data?.bookings) ? bookingsRes.data.bookings : [];
+
+      allBookings
+        .filter(b => b.dateChangeRequest && b.dateChangeRequest.status === 'PENDING')
+        .forEach(b => {
+          items.push({
+            id: `datechange-${b._id}`,
+            type: 'datechange',
+            icon: <CalendarIcon aria-hidden="true" className="h-4 w-4" />,
+            title: 'Date Change Request',
+            message: `${b.customerId?.fullName || 'Customer'} requested to change booking date`,
+            time: new Date(b.dateChangeRequest.requestedAt),
+            action: () => navigate('/admin/date-changes')
+          });
         });
-      });
-      
-      // Refund requests (cancelled bookings with payments that haven't been refunded)
-      const pendingRefunds = allBookings.filter(b => {
-        const isCancelled = b.status === 'CANCELLED' || b.cancellation?.isCancelled;
-        const notRefunded = b.status !== 'REFUNDED' && !b.cancellation?.refundProcessed;
-        const hasPaid = (b.payments || [])
-          .filter(p => p.status === 'SUCCESS' || p.status === 'CONFIRMED')
-          .reduce((sum, p) => sum + (p.amount || 0), 0) > 0;
-        return isCancelled && notRefunded && hasPaid;
-      });
-      pendingRefunds.forEach(b => {
-        notifications.push({
+
+      // Same rule as the refund queue: cancelled, paid, and no refund recorded yet.
+      allBookings.filter(isRefundPending).forEach(b => {
+        items.push({
           id: `refund-${b._id}`,
           type: 'refund',
-          icon: <FaMoneyBillWave className="text-green-500" />,
+          icon: <LuBanknote aria-hidden="true" className="text-success" />,
           title: 'Refund Request',
           message: `${b.customerId?.fullName || 'Customer'} needs refund for cancelled booking`,
           time: new Date(b.cancellation?.cancelledAt || b.updatedAt),
           action: () => navigate('/admin/refunds')
         });
       });
-      
-      // Sort by time (newest first) and limit to 10
-      notifications.sort((a, b) => b.time - a.time);
-      const recentNotifications = notifications.slice(0, 10);
-      
-      setUnreadList(recentNotifications);
-      setUnreadCount(notifications.length);
-      
-      // Fetch live chat messages for admin
-      try {
-        const adminId = localStorage.getItem('userId');
-        if (adminId && (roleUpper === 'ADMIN' || roleUpper === 'MODERATOR')) {
-          const usersRes = await axios.get('/api/users').catch(() => ({ data: [] }));
-          const usersList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data.users || []);
-          
-          // Filter non-admin users
-          const nonAdmins = usersList.filter(u => {
-            if (!u) return false;
-            const r = u.role || '';
-            const rs = u.roles || [];
-            const isAdmin = r.toString().toUpperCase() === 'ADMIN' || 
-                           (Array.isArray(rs) && rs.some(x => (x||'').toString().toUpperCase() === 'ADMIN'));
-            return !isAdmin;
-          });
-          
-          // Get seen chat timestamps from localStorage
-          const seenChats = JSON.parse(localStorage.getItem('seenChatTimestamps') || '{}');
-          
-          const chatNotifs = [];
-          for (const user of nonAdmins.slice(0, 15)) {
-            try {
-              const qs = new URLSearchParams({ userA: adminId, userB: user._id });
-              const convRes = await axios.get('/api/messages/conversation?' + qs.toString()).catch(() => ({ data: { messages: [] } }));
-              
-              if (convRes.data.success && convRes.data.messages && convRes.data.messages.length > 0) {
-                const incomingMsgs = convRes.data.messages.filter(m => {
-                  const sid = m.senderId?._id || m.senderId;
-                  return sid !== adminId;
-                });
-                
-                if (incomingMsgs.length > 0) {
-                  const lastMsg = incomingMsgs[incomingMsgs.length - 1];
-                  const lastMsgTime = new Date(lastMsg.sentAt).getTime();
-                  const seenTime = seenChats[user._id] || 0;
-                  
-                  // Only show notification if message is newer than last seen
-                  if (lastMsgTime > seenTime) {
-                    const senderName = lastMsg.senderId?.fullName || lastMsg.senderId?.name || user.fullName || user.name || user.email || 'User';
-                    const notifId = `chat-${user._id}`;
-                    chatNotifs.push({
-                      id: notifId,
-                      type: 'live-chat',
-                      icon: <FaEnvelope className="text-blue-500" />,
-                      title: `Chat from ${senderName}`,
-                      message: lastMsg.content?.substring(0, 50) + (lastMsg.content?.length > 50 ? '...' : ''),
-                      time: new Date(lastMsg.sentAt),
-                      action: () => {
-                        // Mark chat as seen when clicked
-                        const currentSeen = JSON.parse(localStorage.getItem('seenChatTimestamps') || '{}');
-                        currentSeen[user._id] = Date.now();
-                        localStorage.setItem('seenChatTimestamps', JSON.stringify(currentSeen));
-                        // Immediately dismiss from UI
-                        dismissNotification(notifId);
-                        navigate(`/admin/contacts?chatUserId=${user._id}`);
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              // skip
-            }
-          }
-          
-          if (chatNotifs.length > 0) {
-            const merged = [...chatNotifs, ...recentNotifications]
-              .sort((a, b) => b.time - a.time)
-              .slice(0, 15);
-            const uniqueIds = new Set(merged.map(n => n.id));
-            setUnreadList(merged);
-            setUnreadCount(uniqueIds.size);
-          }
-        }
-      } catch (err) {
-        console.debug('Live chat notifications fetch failed', err);
-      }
-      
-      // Additionally fetch pending reviews (admin/moderator)
-      try {
-        // allow different casing (admin, ADMIN, Admin)
-        if (roleUpper === 'ADMIN' || roleUpper === 'MODERATOR') {
-          const revRes = await axios.get('/api/reviews?status=PENDING').catch(() => ({ data: { reviews: [] } }));
-          const reviews = revRes.data.reviews || [];
-          const reviewNotifs = reviews.map(r => ({
+
+      if (Array.isArray(reviewsRes?.data?.reviews)) {
+        reviewsRes.data.reviews.forEach(r => {
+          items.push({
             id: `review-pending-${r._id}`,
             type: 'review-pending',
-            icon: '🕒',
+            icon: <ClockIcon aria-hidden="true" className="h-4 w-4" />,
             title: 'Review Awaiting Approval',
             message: `${r.customerId?.fullName || 'Customer'} submitted a review for ${r.packageId?.title || 'a package'}`,
             time: new Date(r.createdAt),
-            // deep-link into the reviews moderation page with the specific review id
             action: () => navigate(`/admin/reviews?reviewId=${r._id}`)
-          }));
-
-          console.debug('AdminLayout: fetched pending reviews', reviewNotifs.length, { role: roleUpper });
-
-          if (reviewNotifs.length > 0) {
-            const merged = [...reviewNotifs, ...unreadList]
-              .sort((a, b) => b.time - a.time)
-              .slice(0, 15);
-            // compute unique count by id to avoid double-counting
-            const uniqueIds = new Set(merged.map(n => n.id));
-            setUnreadList(merged);
-            setUnreadCount(uniqueIds.size);
-          }
-        }
-      } catch (err) {
-        // ignore review fetch errors
+          });
+        });
       }
+
+      if (isAdminLike && adminId) {
+        items.push(...await liveChatItems(adminId));
+      }
+
+      items.sort((a, b) => b.time - a.time);
+      setUnreadList(items.slice(0, 15));
+      setUnreadCount(items.length);
     } catch (err) {
-      // ignore polling errors
       console.debug('Unread fetch failed', err?.message || err);
     }
   };
@@ -262,6 +242,13 @@ const AdminLayout = () => {
     fetchUnread();
     const t = setInterval(fetchUnread, 30000);
     return () => clearInterval(t);
+  }, []);
+
+  // Refresh at once when an administrator changes a record that feeds the bell.
+  useEffect(() => {
+    const refresh = () => { fetchUnread(); };
+    window.addEventListener(ADMIN_DATA_CHANGED, refresh);
+    return () => window.removeEventListener(ADMIN_DATA_CHANGED, refresh);
   }, []);
 
   useEffect(() => {
@@ -274,291 +261,176 @@ const AdminLayout = () => {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
+  const { logout } = useAuth();
+  const MENU_PAGES = [
+    { label: 'All users', path: '/admin/users', group: 'People' },
+    { label: 'Operators', path: '/admin/operators', group: 'People' },
+  ];
+  const allItems = [...NAV_GROUPS.flatMap(group => group.items.map(item => ({ ...item, group: group.label }))), ...MENU_PAGES];
+  const currentItem = allItems.find(item => isActive(item.path));
+  const currentGroup = currentItem ? { label: currentItem.group } : null;
+  const pageTitle = currentItem ? currentItem.label : 'Admin';
+
+  const handleLogout = () => {
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userRole');
+    logout();
+    navigate('/');
+  };
+
   return (
-    <div className="min-h-screen bg-gray-900 dark:bg-gray-900 flex">
-      {/* Left Sidebar Navigation */}
-      <aside className="w-64 bg-gray-800 dark:bg-gray-800 shadow-2xl border-r border-gray-700 dark:border-gray-700 fixed h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex items-center space-x-3 mb-4">
-            <img src="/tripbloom_logo.svg" alt="TripBloom" className="w-10 h-10" />
-            <h1 className="text-xl font-bold text-primary">Admin Portal</h1>
+    <div className="dark mesh-bg min-h-screen text-text">
+      <aside
+        aria-label="Admin navigation"
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-surface lg:glass-strong transition-transform duration-200 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
+      >
+        <div className="flex h-20 items-center gap-3 border-b border-border px-5">
+          <img src="/tripbloom_logo.svg" alt="" className="h-9 w-9" />
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-base font-bold text-text">TripBloom</p>
+            <p className="text-xs text-text-muted">Admin portal</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close navigation"
+            title="Close navigation"
+            className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-muted hover:text-text lg:hidden"
+          >
+            <LuX aria-hidden="true" className="h-5 w-5" />
+          </button>
         </div>
 
-        {/* Navigation Menu */}
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto pb-20">
-          <button 
-            onClick={() => navigate('/')}
-            className="w-full flex items-center space-x-3 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:shadow-lg transition-all"
-          >
-            <FaChartLine className="text-xl" />
-            <span className="font-semibold">Home</span>
-          </button>
-          <button 
-            onClick={() => navigate('/admin')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg hover:shadow-lg transition-all ${
-              isActive('/admin')
-                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaChartLine className="text-xl" />
-            <span className="font-semibold">Dashboard</span>
-          </button>
-
-          {/* Manage Users Dropdown */}
-          <ManageUsersMenu navigate={navigate} />
-
-          
-          
-          <button 
-            onClick={() => navigate('/admin/packages')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/packages')
-                ? 'bg-green-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaRoute className="text-xl" />
-            <span className="font-semibold">Tour Packages</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/departures')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/departures')
-                ? 'bg-purple-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaCalendar className="text-xl" />
-            <span className="font-semibold">Departures</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/contacts')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/contacts')
-                ? 'bg-indigo-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaEnvelope className="text-xl" />
-            <span className="font-semibold">Contact Messages</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/refunds')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/refunds')
-                ? 'bg-red-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaDollarSign className="text-xl" />
-            <span className="font-semibold">Refund Queue</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/date-changes')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/date-changes')
-                ? 'bg-blue-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaCalendarAlt className="text-xl" />
-            <span className="font-semibold">Date Change Req</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/kyc')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/kyc')
-                ? 'bg-cyan-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaIdCard className="text-xl" />
-            <span className="font-semibold">KYC Verify</span>
-            {pendingKYCCount > 0 && (
-              <span className="ml-auto inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
-                {pendingKYCCount}
-              </span>
-            )}
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/reviews')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/reviews')
-                ? 'bg-yellow-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaStar className="text-xl" />
-            <span className="font-semibold">Reviews</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/announcements')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/announcements')
-                ? 'bg-pink-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaBullhorn className="text-xl" />
-            <span className="font-semibold">Announcements</span>
-          </button>
-          
-          <button 
-            onClick={() => navigate('/admin/activity-logs')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/activity-logs')
-                ? 'bg-teal-500 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaEye className="text-xl" />
-            <span className="font-semibold">Activity Logs</span>
-          </button>
-          
-
-          <button 
-            onClick={() => navigate('/admin/settings')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              isActive('/admin/settings')
-                ? 'bg-gray-600 text-white shadow-lg'
-                : 'text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            <FaCog className="text-xl" />
-            <span className="font-semibold">Settings</span>
-          </button>
+        <nav aria-label="Admin sections" className="flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 py-5">
+          {NAV_GROUPS.map(group => (
+            <div key={group.label}>
+              <div className="flex items-center gap-3 px-3" role="presentation">
+                <span className="h-px flex-1 bg-border" />
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{group.label}</p>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              {group.menu && <div className="mt-2"><ManageUsersMenu navigate={navigate} /></div>}
+              <ul className="mt-2 space-y-1">
+                {group.items.map(item => {
+                  const active = isActive(item.path);
+                  const Icon = item.icon;
+                  const count = item.badgeKey === 'kyc' ? pendingKYCCount : 0;
+                  return (
+                    <li key={item.path}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(item.path)}
+                        aria-current={active ? 'page' : undefined}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 ${
+                          active ? 'bg-brand/15 text-text ring-1 ring-inset ring-brand/30' : 'text-text-muted hover:bg-surface-muted hover:text-text'
+                        }`}
+                      >
+                        <Icon aria-hidden="true" className={`h-4 w-4 flex-none ${active ? 'text-brand' : ''}`} />
+                        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+                        {count > 0 && (
+                          <span className="rounded-full bg-danger px-2 py-0.5 text-xs font-bold leading-none text-white">{count}</span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
 
-        {/* Bottom Actions */}
-        <div className="p-4 border-t border-gray-700 dark:border-gray-700 bg-gray-800 dark:bg-gray-800 flex-shrink-0">
-          <button 
-            onClick={() => {
-              localStorage.removeItem('userName');
-              localStorage.removeItem('userRole');
-              navigate('/');
-            }}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors font-semibold"
+        <div className="space-y-2 border-t border-border p-4">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-muted hover:text-text"
           >
-            <FaSignOutAlt />
-            <span>Logout</span>
+            <LuHouse aria-hidden="true" className="h-4 w-4" />
+            View public site
           </button>
+          <Button variant="secondary" icon={LuLogOut} className="w-full" onClick={handleLogout}>Log out</Button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 ml-64">
-        {/* Top Bar */}
-        <div className="bg-gray-800 dark:bg-gray-800 shadow-lg border-b border-gray-700 dark:border-gray-700 px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-white dark:text-white">Admin Dashboard</h2>
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="pl-10 pr-4 py-2 border border-gray-600 dark:border-gray-600 rounded-lg bg-gray-700 dark:bg-gray-700 text-white dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-                <FaSearch className="absolute left-3 top-3 text-gray-400" />
-              </div>
-              <div className="relative" ref={notifRef}>
-                <button onClick={() => setShowNotifications(v => !v)} className="relative p-2 text-gray-300 dark:text-gray-300 hover:text-primary transition-colors">
-                  <FaBell size={20} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-600 rounded-full animate-pulse">{unreadCount}</span>
-                  )}
-                </button>
+      {mobileNavOpen && (
+        <div aria-hidden="true" className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
 
-                {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
-                    <div className="p-3 border-b border-gray-100 dark:border-gray-700 font-semibold text-gray-900 dark:text-white">
-                      Notifications
-                      {unreadCount > 0 && (
-                        <span className="ml-2 text-xs bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <div className="max-h-96 overflow-auto">
-                      {unreadList.length === 0 && (
-                        <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-                          No new notifications
-                        </div>
-                      )}
-                      {unreadList.map(n => (
-                        <button 
-                          key={n.id} 
-                          onClick={() => { 
-                            setShowNotifications(false); 
-                            n.action(); 
-                          }} 
-                          className="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 transition-colors"
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="flex items-start gap-2 flex-1">
-                              <span className="text-xl flex-shrink-0" aria-hidden="true">{n.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm text-gray-900 dark:text-white">
-                                  {n.title}
-                                </div>
-                                <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 mt-0.5">
-                                  {n.message}
-                                </div>
-                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                  {formatNotificationTime(n.time)}
-                                </div>
-                              </div>
-                            </div>
-                            {n.type !== 'contact' && (
-                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${
-                                n.type === 'datechange' 
-                                  ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' 
-                                  : n.type === 'review-pending'
-                                  ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
-                                  : (n.type === 'chat' || n.type === 'live-chat')
-                                  ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                                  : n.type === 'kyc'
-                                  ? 'bg-purple-100 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
-                                  : 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400'
-                              }`}>
-                                {n.type === 'datechange' ? 'Date Change' 
-                                  : n.type === 'review-pending' ? 'Review' 
-                                  : (n.type === 'chat' || n.type === 'live-chat') ? 'Chat'
-                                  : n.type === 'kyc' ? 'KYC'
-                                  : 'Refund'}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="p-2 text-center border-t border-gray-100 dark:border-gray-700">
-                      <button 
-                        onClick={() => setShowNotifications(false)} 
-                        className="text-sm text-primary hover:underline"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+      <div className="min-h-screen min-w-0 lg:pl-72">
+        <header className="glass-strong backdrop-blur-xl sticky top-0 z-30 flex h-20 items-center justify-between gap-4 border-b border-border px-4 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(open => !open)}
+              aria-label="Toggle navigation"
+              aria-expanded={mobileNavOpen}
+              className="rounded-xl p-2 text-text-muted transition-colors hover:bg-surface-muted hover:text-text lg:hidden"
+            >
+              <LuMenu aria-hidden="true" className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-text-muted">Admin{currentGroup ? ` / ${currentGroup.label}` : ''}</p>
+              <h2 className="truncate font-display text-xl font-bold text-text">{pageTitle}</h2>
             </div>
           </div>
-        </div>
 
-        {/* Page Content */}
-        <div className="px-8 py-8">
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => { if (!showNotifications) fetchUnread(); setShowNotifications(v => !v); }}
+              aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+              aria-expanded={showNotifications}
+              className="relative rounded-xl p-2.5 text-text-muted transition-colors hover:bg-surface-muted hover:text-text"
+            >
+              <LuBell aria-hidden="true" className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-[20px] items-center justify-center rounded-full bg-danger px-1.5 py-0.5 text-[11px] font-bold leading-none text-white">{unreadCount}</span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-2xl">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <p className="font-semibold text-text">Notifications</p>
+                  <span className="text-xs text-text-muted">{unreadCount} unread</span>
+                </div>
+                <div className="max-h-96 overflow-auto">
+                  {unreadList.length === 0 && (
+                    <p className="p-6 text-center text-sm text-text-muted">No new notifications.</p>
+                  )}
+                  <ul>
+                    {unreadList.map(n => (
+                      <li key={n.id}>
+                        <button
+                          type="button"
+                          onClick={() => { setShowNotifications(false); n.action(); }}
+                          className="flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-surface-muted"
+                        >
+                          <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-surface-muted text-text-muted" aria-hidden="true">{n.icon}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-semibold text-text">{n.title}</span>
+                              {n.type !== 'contact' && <Badge tone={NOTIFICATION_TONE[n.type] || 'danger'}>{NOTIFICATION_LABEL[n.type] || 'Refund'}</Badge>}
+                            </span>
+                            <span className="mt-0.5 line-clamp-2 block text-sm text-text-muted">{n.message}</span>
+                            <span className="mt-1 block text-xs text-text-muted">{formatNotificationTime(n.time)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="border-t border-border p-2 text-center">
+                  <button type="button" onClick={() => setShowNotifications(false)} className="text-sm font-semibold text-brand hover:underline">Close</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <main className="px-4 py-6 sm:px-8 sm:py-8">
           <Outlet />
-        </div>
+        </main>
       </div>
     </div>
   );

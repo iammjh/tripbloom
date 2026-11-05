@@ -1,3 +1,4 @@
+import { receiptsByCurrency } from './analytics.service.js';
 // stats.service.js - Global statistics for homepage
 import Booking from '../model/booking.model.js';
 import { TourPackage } from '../model/tourPackage.model.js';
@@ -38,7 +39,7 @@ export async function getPlatformStats() {
 
     // Additional useful stats
     const totalBookings = await Booking.countDocuments();
-    const totalCustomers = await User.countDocuments({ roles: 'CUSTOMER' });
+    const totalCustomers = await User.countDocuments({ roles: { $in: ['CUSTOMER', 'customer'] } });
     const totalReviews = await Review.countDocuments({ status: 'APPROVED' });
     
     // Calculate average rating
@@ -71,7 +72,7 @@ export async function getBookingStats() {
     const stats = await Booking.aggregate([
       {
         $group: {
-          _id: '$status',
+          _id: { status: '$status', currency: { $ifNull: ['$currency', 'BDT'] } },
           count: { $sum: 1 },
           totalAmount: { $sum: '$totalAmount' },
           totalTravelers: { $sum: '$numTravelers' }
@@ -80,16 +81,16 @@ export async function getBookingStats() {
     ]);
 
     const byStatus = {};
-    let totalRevenue = 0;
+    const financialBookings = await Booking.find().select('payments currency createdAt').lean();
+    const revenueByCurrency = receiptsByCurrency(financialBookings);
+    const totalRevenue = revenueByCurrency.BDT?.net || 0;
     let totalTravelers = 0;
 
     stats.forEach(stat => {
-      byStatus[stat._id] = {
-        count: stat.count,
-        totalAmount: stat.totalAmount,
-        totalTravelers: stat.totalTravelers
-      };
-      totalRevenue += stat.totalAmount;
+      const status = byStatus[stat._id.status] ||= { count: 0, totalAmount: 0, totalTravelers: 0, amountsByCurrency: {} };
+      status.count += stat.count; status.totalTravelers += stat.totalTravelers;
+      status.amountsByCurrency[stat._id.currency] = stat.totalAmount;
+      if (stat._id.currency === 'BDT') status.totalAmount += stat.totalAmount;
       totalTravelers += stat.totalTravelers;
     });
 
@@ -97,6 +98,8 @@ export async function getBookingStats() {
       stats: {
         byStatus,
         totalRevenue,
+        currency: 'BDT',
+        revenueByCurrency,
         totalTravelers
       }
     };

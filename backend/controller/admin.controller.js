@@ -2,6 +2,7 @@
 import {
   getAdminDashboard,
   getActivityLogs,
+  getActivityLogOptions,
   updateUserRole,
   toggleUserSuspension,
   getOperatorsWithStats,
@@ -19,7 +20,7 @@ import {
 
 // Helper to extract admin info from request (safe for server)
 const getAdminInfo = (req) => {
-  const adminId = req?.user?._id || req?.userId || null;
+  const adminId = req?.user?.id || null;
   const ipAddress = req?.ip || req?.connection?.remoteAddress || req?.socket?.remoteAddress || req?.headers?.['x-forwarded-for'] || 'unknown';
   return { adminId, ipAddress };
 };
@@ -44,6 +45,14 @@ export async function getAdminDashboardController(req, res) {
 }
 
 // Get activity logs
+export async function getActivityLogOptionsController(req, res) {
+  const result = await getActivityLogOptions();
+  if (result.error) {
+    return res.status(500).json({ success: false, message: result.error });
+  }
+  res.json({ success: true, actions: result.actions, admins: result.admins });
+}
+
 export async function getActivityLogsController(req, res) {
   const { limit, adminId, action, startDate, endDate } = req.query;
   const result = await getActivityLogs({ 
@@ -85,7 +94,7 @@ export async function updateUserRoleController(req, res) {
   const result = await updateUserRole({ userId, newRoles: roles, adminId, ipAddress });
 
   if (result.error) {
-    return res.status(result.error === 'User not found' ? 404 : 500).json({
+    return res.status(result.status || 500).json({
       success: false,
       message: result.error
     });
@@ -114,7 +123,7 @@ export async function toggleUserSuspensionController(req, res) {
   const result = await toggleUserSuspension({ userId, suspend, adminId, reason, ipAddress });
 
   if (result.error) {
-    return res.status(result.error === 'User not found' ? 404 : 500).json({
+    return res.status(result.status || 500).json({
       success: false,
       message: result.error
     });
@@ -219,7 +228,7 @@ export async function getPlatformMetricsController(req, res) {
   const result = await getPlatformMetrics({ startDate, endDate });
 
   if (result.error) {
-    return res.status(500).json({
+    return res.status(result.status || 500).json({
       success: false,
       message: result.error
     });

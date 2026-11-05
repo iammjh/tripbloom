@@ -1,6 +1,21 @@
+import { LuArrowRight, LuCalendar, LuCalendarDays, LuCheck, LuClock, LuInfo, LuMail, LuPackage, LuUser, LuUsers, LuWallet, LuX } from 'react-icons/lu';
+import { CloseIcon } from './ui/icons.js';
+import { userMessage } from '../utils/errorMessage.js';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
+import { notifyAdminDataChanged } from '../utils/adminEvents.js';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaCalendarAlt, FaCheck, FaTimes, FaClock, FaUser, FaInfoCircle } from 'react-icons/fa';
+import { thClass, tdClass } from './admin/AdminPrimitives.jsx';
+import { bookingLabel } from '../utils/bookingCode.js';
+import Modal from './ui/Modal.jsx';
+import Button from './ui/Button.jsx';
+import Badge from './ui/Badge.jsx';
+import { DetailFact, DetailSection, DetailText, formatBDT, formatDetailDate } from './admin/DetailPrimitives.jsx';
+
+const REQUEST_TONE = { PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger' };
+const REQUEST_LABEL = { PENDING: 'Awaiting decision', APPROVED: 'Approved', REJECTED: 'Rejected' };
+
 
 const DateChangeRequestsManager = () => {
   const [requests, setRequests] = useState([]);
@@ -32,7 +47,7 @@ const DateChangeRequestsManager = () => {
   };
 
   const handleApprove = async (bookingId, requestedDate) => {
-    if (!window.confirm('Are you sure you want to approve this date change request?')) {
+    if (!(await confirmAction({ message: 'Are you sure you want to approve this date change request?' }))) {
       return;
     }
 
@@ -45,13 +60,14 @@ const DateChangeRequestsManager = () => {
       });
 
       if (res.data.success) {
-        alert('Date change request approved successfully!');
+        notify.message('Date change request approved successfully!');
+        notifyAdminDataChanged();
         fetchDateChangeRequests(); // Refresh the list
         setShowDetailModal(false);
       }
     } catch (err) {
       console.error('Failed to approve request:', err);
-      alert('Failed to approve request: ' + (err.response?.data?.message || err.message));
+      notify.error(userMessage(err, 'The request could not be approved. Please try again.'));
     }
     setProcessing(false);
   };
@@ -68,13 +84,14 @@ const DateChangeRequestsManager = () => {
       });
 
       if (res.data.success) {
-        alert('Date change request rejected.');
+        notify.message('Date change request rejected.');
+        notifyAdminDataChanged();
         fetchDateChangeRequests(); // Refresh the list
         setShowDetailModal(false);
       }
     } catch (err) {
       console.error('Failed to reject request:', err);
-      alert('Failed to reject request: ' + (err.response?.data?.message || err.message));
+      notify.error(userMessage(err, 'The request could not be rejected. Please try again.'));
     }
     setProcessing(false);
   };
@@ -86,11 +103,11 @@ const DateChangeRequestsManager = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      PENDING: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-      APPROVED: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-      REJECTED: 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+      PENDING: 'bg-warning/10 text-warning',
+      APPROVED: 'bg-success/10 text-success',
+      REJECTED: 'bg-danger/10 text-danger'
     };
-    return colors[status] || 'bg-gray-100 text-gray-700';
+    return colors[status] || 'bg-surface-muted text-text';
   };
 
   const formatDate = (date) => {
@@ -103,13 +120,13 @@ const DateChangeRequestsManager = () => {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-text">
           Date Change Requests
         </h2>
         <button
           onClick={fetchDateChangeRequests}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90"
         >
           Refresh
         </button>
@@ -120,7 +137,7 @@ const DateChangeRequestsManager = () => {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-4 py-2 border border-border rounded-lg bg-surface text-text"
         >
           <option value="all">All Requests</option>
           <option value="pending">Pending</option>
@@ -131,21 +148,21 @@ const DateChangeRequestsManager = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-          <div className="text-sm text-yellow-600 dark:text-yellow-400">Pending</div>
-          <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
+        <div className="bg-warning/10 p-4 rounded-lg border border-warning/30">
+          <div className="text-sm text-warning">Pending</div>
+          <div className="text-2xl font-bold text-warning">
             {requests.filter(r => r.dateChangeRequest?.status === 'PENDING').length}
           </div>
         </div>
-        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-          <div className="text-sm text-green-600 dark:text-green-400">Approved</div>
-          <div className="text-2xl font-bold text-green-700 dark:text-green-300">
+        <div className="bg-success/10 p-4 rounded-lg border border-success/30">
+          <div className="text-sm text-success">Approved</div>
+          <div className="text-2xl font-bold text-success">
             {requests.filter(r => r.dateChangeRequest?.status === 'APPROVED').length}
           </div>
         </div>
-        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-          <div className="text-sm text-red-600 dark:text-red-400">Rejected</div>
-          <div className="text-2xl font-bold text-red-700 dark:text-red-300">
+        <div className="bg-danger/10 p-4 rounded-lg border border-danger/30">
+          <div className="text-sm text-danger">Rejected</div>
+          <div className="text-2xl font-bold text-danger">
             {requests.filter(r => r.dateChangeRequest?.status === 'REJECTED').length}
           </div>
         </div>
@@ -155,67 +172,67 @@ const DateChangeRequestsManager = () => {
       {loading ? (
         <p>Loading requests...</p>
       ) : filteredRequests.length === 0 ? (
-        <p className="text-gray-600 dark:text-gray-400">No date change requests found.</p>
+        <p className="text-text-muted">No date change requests found.</p>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+        <div className="bg-surface rounded-lg shadow overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-surface-muted">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Booking ID
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Customer
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Package
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Current Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Requested Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className={thClass}>
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-surface divide-y divide-gray-200">
               {filteredRequests.map((booking) => (
-                <tr key={booking._id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                    {booking._id.slice(-8).toUpperCase()}
+                <tr key={booking._id} className="hover:bg-surface-muted">
+                  <td className={tdClass}>
+                    {bookingLabel(booking)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                  <td className={tdClass}>
                     {booking.customerId?.fullName || booking.customerId?.name || 'N/A'}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
+                  <td className={tdClass}>
                     {booking.packageId?.title || 'N/A'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                  <td className={tdClass}>
                     {formatDate(booking.startDate)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 font-semibold">
+                  <td className={tdClass}>
                     {formatDate(booking.dateChangeRequest.requestedDate)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className={tdClass}>
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.dateChangeRequest.status)}`}>
                       {booking.dateChangeRequest.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <td className={tdClass}>
                     <button
                       onClick={() => {
                         setSelectedRequest(booking);
                         setShowDetailModal(true);
                       }}
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                      className="text-info hover:text-info mr-3"
                     >
-                      <FaInfoCircle className="inline mr-1" />
+                      <LuInfo aria-hidden="true" className="inline mr-1" />
                       View
                     </button>
                     {booking.dateChangeRequest.status === 'PENDING' && (
@@ -223,17 +240,17 @@ const DateChangeRequestsManager = () => {
                         <button
                           onClick={() => handleApprove(booking._id, booking.dateChangeRequest.requestedDate)}
                           disabled={processing}
-                          className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-3 disabled:opacity-50"
+                          className="text-success hover:text-success mr-3 disabled:opacity-50"
                         >
-                          <FaCheck className="inline mr-1" />
+                          <LuCheck aria-hidden="true" className="inline mr-1" />
                           Approve
                         </button>
                         <button
                           onClick={() => handleReject(booking._id)}
                           disabled={processing}
-                          className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                          className="text-danger hover:text-danger disabled:opacity-50"
                         >
-                          <FaTimes className="inline mr-1" />
+                          <LuX aria-hidden="true" className="inline mr-1" />
                           Reject
                         </button>
                       </>
@@ -246,127 +263,96 @@ const DateChangeRequestsManager = () => {
         </div>
       )}
 
-      {/* Detail Modal */}
-      {showDetailModal && selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                Date Change Request Details
-              </h3>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
+      {/* Date change request details */}
+      <Modal
+        open={showDetailModal && Boolean(selectedRequest)}
+        onClose={() => setShowDetailModal(false)}
+        title="Date change request"
+        description={selectedRequest ? `${bookingLabel(selectedRequest)} · ${selectedRequest.customerId?.fullName || selectedRequest.customerId?.name || 'Customer'}` : ''}
+        size="xl"
+        rootClassName="dark"
+        footer={selectedRequest && (
+          <>
+            <Button variant="secondary" onClick={() => setShowDetailModal(false)}>Close</Button>
+            {selectedRequest.dateChangeRequest.status === 'PENDING' && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="danger"
+                  icon={LuX}
+                  onClick={() => handleReject(selectedRequest._id)}
+                  disabled={processing}
+                >
+                  Reject request
+                </Button>
+                <Button
+                  icon={LuCheck}
+                  onClick={() => handleApprove(selectedRequest._id, selectedRequest.dateChangeRequest.requestedDate)}
+                  loading={processing}
+                  disabled={processing}
+                >
+                  Approve request
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      >
+        {selectedRequest && (() => {
+          const request = selectedRequest.dateChangeRequest;
+          const currentStart = selectedRequest.startDate;
+          const requestedStart = request.requestedDate;
+          const shiftDays = Math.round((new Date(requestedStart) - new Date(currentStart)) / 86400000);
+          const shiftText = shiftDays === 0 ? 'No change in date' : `${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays) === 1 ? '' : 's'}`;
+          return (
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge tone={REQUEST_TONE[request.status] || 'neutral'}>{REQUEST_LABEL[request.status] || request.status}</Badge>
+                <span className="text-xs text-text-muted">Requested {formatDetailDate(request.requestedAt)}</span>
+              </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              {/* Current and requested start */}
+              <div className="glass grid items-center gap-4 rounded-2xl p-5 sm:grid-cols-[1fr_auto_1fr]">
                 <div>
-                  <label className="text-sm text-gray-500 dark:text-gray-400">Booking ID</label>
-                  <p className="font-semibold text-gray-900 dark:text-white">
-                    {selectedRequest._id.slice(-8).toUpperCase()}
-                  </p>
+                  <p className="text-xs text-text-muted">Current start</p>
+                  <p className="mt-1 font-display text-xl font-semibold text-text">{formatDetailDate(currentStart, false)}</p>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-500 dark:text-gray-400">Status</label>
-                  <p>
-                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(selectedRequest.dateChangeRequest.status)}`}>
-                      {selectedRequest.dateChangeRequest.status}
-                    </span>
-                  </p>
+                <div className="flex flex-col items-center gap-1 text-text-muted">
+                  <LuArrowRight aria-hidden="true" className="h-5 w-5" />
+                  <span className={`text-xs font-semibold ${shiftDays > 0 ? 'text-warning' : shiftDays < 0 ? 'text-info' : 'text-text-muted'}`}>{shiftText}</span>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-xs text-text-muted">Requested start</p>
+                  <p className="mt-1 font-display text-xl font-semibold text-brand">{formatDetailDate(requestedStart, false)}</p>
                 </div>
               </div>
 
-              <div>
-                <label className="text-sm text-gray-500 dark:text-gray-400">Customer</label>
-                <p className="font-semibold text-gray-900 dark:text-white">
-                  {selectedRequest.customerId?.fullName || selectedRequest.customerId?.name || 'N/A'}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {selectedRequest.customerId?.email || 'N/A'}
-                </p>
-              </div>
+              <DetailSection id="date-change-facts-heading" title="Booking">
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <DetailFact icon={LuUser} label="Customer" value={selectedRequest.customerId?.fullName || selectedRequest.customerId?.name || 'Not on file'} />
+                  <DetailFact icon={LuMail} label="Email" value={selectedRequest.customerId?.email || 'Not on file'} />
+                  <DetailFact icon={LuPackage} label="Package" value={selectedRequest.packageId?.title || 'Not on file'} />
+                  <DetailFact icon={LuCalendarDays} label="Booking type" value={selectedRequest.bookingType === 'GROUP' ? 'Group departure' : 'Personal booking'} />
+                  <DetailFact icon={LuUsers} label="Travellers" value={selectedRequest.numTravelers ?? '—'} />
+                  <DetailFact icon={LuWallet} label="Booking total" value={formatBDT(selectedRequest.totalAmount)} />
+                </dl>
+              </DetailSection>
 
-              <div>
-                <label className="text-sm text-gray-500 dark:text-gray-400">Package</label>
-                <p className="font-semibold text-gray-900 dark:text-white">
-                  {selectedRequest.packageId?.title || 'N/A'}
-                </p>
-              </div>
+              <DetailSection id="date-change-reason-heading" title="Reason for the change">
+                <DetailText>{request.reason || 'No reason was given.'}</DetailText>
+              </DetailSection>
 
-              <div className="grid grid-cols-2 gap-4 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <div>
-                  <label className="text-sm text-blue-600 dark:text-blue-400">Current Start Date</label>
-                  <p className="font-bold text-gray-900 dark:text-white">
-                    {formatDate(selectedRequest.startDate)}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm text-blue-600 dark:text-blue-400">Requested New Date</label>
-                  <p className="font-bold text-green-600 dark:text-green-400">
-                    {formatDate(selectedRequest.dateChangeRequest.requestedDate)}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-500 dark:text-gray-400">Reason for Change</label>
-                <p className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 p-3 rounded">
-                  {selectedRequest.dateChangeRequest.reason || 'No reason provided'}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-500 dark:text-gray-400">Requested On</label>
-                <p className="text-gray-900 dark:text-white">
-                  {new Date(selectedRequest.dateChangeRequest.requestedAt).toLocaleString()}
-                </p>
-              </div>
-
-              {selectedRequest.dateChangeRequest.reviewedAt && (
-                <>
-                  <div>
-                    <label className="text-sm text-gray-500 dark:text-gray-400">Reviewed On</label>
-                    <p className="text-gray-900 dark:text-white">
-                      {new Date(selectedRequest.dateChangeRequest.reviewedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  {selectedRequest.dateChangeRequest.reviewNotes && (
-                    <div>
-                      <label className="text-sm text-gray-500 dark:text-gray-400">Review Notes</label>
-                      <p className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 p-3 rounded">
-                        {selectedRequest.dateChangeRequest.reviewNotes}
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {selectedRequest.dateChangeRequest.status === 'PENDING' && (
-                <div className="flex gap-4 pt-4">
-                  <button
-                    onClick={() => handleApprove(selectedRequest._id, selectedRequest.dateChangeRequest.requestedDate)}
-                    disabled={processing}
-                    className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold"
-                  >
-                    {processing ? 'Processing...' : 'Approve Request'}
-                  </button>
-                  <button
-                    onClick={() => handleReject(selectedRequest._id)}
-                    disabled={processing}
-                    className="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold"
-                  >
-                    {processing ? 'Processing...' : 'Reject Request'}
-                  </button>
-                </div>
+              {request.reviewedAt && (
+                <DetailSection id="date-change-review-heading" title="Decision">
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <DetailFact icon={LuCheck} label="Reviewed" value={formatDetailDate(request.reviewedAt)} />
+                  </dl>
+                  {request.reviewNotes && <DetailText>{request.reviewNotes.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, (iso) => formatDetailDate(iso, true))}</DetailText>}
+                </DetailSection>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
+      </Modal>
     </div>
   );
 };

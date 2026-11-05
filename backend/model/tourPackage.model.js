@@ -5,6 +5,8 @@ const TOUR_PACKAGE_TYPES = ['PERSONAL', 'GROUP'];
 const PERSONAL_CATEGORIES = ['SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'];
 
 const tourPackageSchema = new mongoose.Schema({
+  // Two to five capital letters used in booking codes, e.g. RL for Rangamati Lake.
+  code: { type: String, uppercase: true, trim: true, match: /^[A-Z]{2,5}$/, unique: true, sparse: true },
   title: { type: String, required: true },
   description: { type: String },
   type: { type: String, enum: TOUR_PACKAGE_TYPES, required: true },

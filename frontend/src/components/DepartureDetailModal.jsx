@@ -1,12 +1,23 @@
-import React, { useState } from 'react';
+import { LuCalendar, LuCircleCheck, LuCircleX, LuMapPin, LuTriangleAlert, LuUsers, LuX } from 'react-icons/lu';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import axios from 'axios';
-import { FaTimes, FaUsers, FaCalendarAlt, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaExclamationTriangle } from 'react-icons/fa';
+
 
 const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelOption, setCancelOption] = useState('keep'); // 'keep' or 'cancel'
   const [refundAmount, setRefundAmount] = useState(0);
+  const [bookings, setBookings] = useState([]);
+  const [bookingsError, setBookingsError] = useState(false);
+
+  // Real bookings on this departure (hooks stay above the early return)
+  useEffect(() => {
+    if (!isOpen || !departure?._id) return;
+    axios.get('/api/bookings', { params: { groupDepartureId: departure._id } })
+      .then(res => { setBookings(res.data.bookings || []); setBookingsError(false); })
+      .catch(() => { setBookings([]); setBookingsError(true); });
+  }, [isOpen, departure?._id]);
 
   if (!isOpen || !departure) return null;
 
@@ -50,12 +61,6 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
     }
   };
 
-  const mockBookings = [
-    { id: 1, customerName: 'John Doe', seats: 2, status: 'CONFIRMED', amount: 500 },
-    { id: 2, customerName: 'Jane Smith', seats: 3, status: 'CONFIRMED', amount: 750 },
-    { id: 3, customerName: 'Bob Johnson', seats: 1, status: 'PENDING', amount: 250 },
-  ];
-
   const totalSeats = departure.totalSeats || 40;
   const bookedSeats = departure.bookedSeats || 0;
   const availableSeats = totalSeats - bookedSeats;
@@ -73,10 +78,11 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-scale-in" style={{ zIndex: 99999 }}>
           {/* Close Button */}
           <button
+            aria-label="Close"
             onClick={onClose}
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
           >
-            <FaTimes size={24} />
+            <LuX aria-hidden="true" size={24} />
           </button>
 
           {/* Header */}
@@ -92,21 +98,21 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Summary</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <FaCalendarAlt className="text-primary text-2xl" />
+                  <LuCalendar aria-hidden="true" className="text-primary text-2xl" />
                   <div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Start Date</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{formatDate(departure.startDate)}</div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <FaCalendarAlt className="text-primary text-2xl" />
+                  <LuCalendar aria-hidden="true" className="text-primary text-2xl" />
                   <div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">End Date</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{formatDate(departure.endDate)}</div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <FaUsers className="text-primary text-2xl" />
+                  <LuUsers aria-hidden="true" className="text-primary text-2xl" />
                   <div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Capacity</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{bookedSeats} / {totalSeats} seats</div>
@@ -176,7 +182,7 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
                 </div>
               ) : (
                 <div className="flex items-center justify-center p-8 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg text-yellow-700 dark:text-yellow-400">
-                  <FaExclamationTriangle className="mr-2" />
+                  <LuTriangleAlert aria-hidden="true" className="mr-2" />
                   No operators assigned
                 </div>
               )}
@@ -196,11 +202,17 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockBookings.map((booking) => (
-                      <tr key={booking.id} className="border-b border-gray-200 dark:border-gray-700">
-                        <td className="py-3 px-4 text-gray-900 dark:text-white">{booking.customerName}</td>
-                        <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{booking.seats}</td>
-                        <td className="py-3 px-4 text-gray-600 dark:text-gray-400">${booking.amount}</td>
+                    {bookingsError && (
+                      <tr><td colSpan={4} className="py-3 px-4 text-sm text-red-600">Bookings could not be loaded.</td></tr>
+                    )}
+                    {!bookingsError && bookings.length === 0 && (
+                      <tr><td colSpan={4} className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">No bookings on this departure yet.</td></tr>
+                    )}
+                    {bookings.map((booking) => (
+                      <tr key={booking._id} className="border-b border-gray-200 dark:border-gray-700">
+                        <td className="py-3 px-4 text-gray-900 dark:text-white">{booking.customerId?.fullName || 'Customer'}</td>
+                        <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{booking.numTravelers}</td>
+                        <td className="py-3 px-4 text-gray-600 dark:text-gray-400">BDT {Number(booking.finalAmount || 0).toLocaleString()}</td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded text-xs font-semibold ${
                             booking.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
@@ -226,6 +238,7 @@ const DepartureDetailModal = ({ isOpen, onClose, departure }) => {
                 </button>
               )}
               <button
+                aria-label="Close"
                 onClick={onClose}
                 className="px-6 py-3 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold"
               >

@@ -1,5 +1,6 @@
+import { LuX } from 'react-icons/lu';
 import React, { useState } from 'react';
-import { FaTimes } from 'react-icons/fa';
+
 
 const Gallery = () => {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -51,7 +52,7 @@ const Gallery = () => {
             className="absolute top-4 right-4 text-white text-4xl hover:text-gray-300"
             onClick={() => setSelectedImage(null)}
           >
-            <FaTimes />
+            <LuX aria-hidden="true" />
           </button>
           <div className="max-w-4xl">
             <img

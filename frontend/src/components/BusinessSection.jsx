@@ -1,12 +1,13 @@
+import { LuBriefcase, LuHandshake, LuTrendingUp, LuUsers } from 'react-icons/lu';
 import React from 'react';
-import { FaBriefcase, FaChartLine, FaUsers, FaHandshake } from 'react-icons/fa';
+
 
 const BusinessSection = () => {
   const benefits = [
-    { icon: <FaBriefcase />, text: 'Upload and manage tour packages' },
-    { icon: <FaChartLine />, text: 'Track bookings and revenue in real-time' },
-    { icon: <FaUsers />, text: 'Access customer insights and analytics' },
-    { icon: <FaHandshake />, text: 'Join a trusted network of operators' }
+    { icon: <LuBriefcase aria-hidden="true" />, text: 'Upload and manage tour packages' },
+    { icon: <LuTrendingUp aria-hidden="true" />, text: 'Track bookings and revenue in real-time' },
+    { icon: <LuUsers aria-hidden="true" />, text: 'Access customer insights and analytics' },
+    { icon: <LuHandshake aria-hidden="true" />, text: 'Join a trusted network of operators' }
   ];
 
   return (

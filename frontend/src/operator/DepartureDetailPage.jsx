@@ -1,5 +1,10 @@
+import { LuArrowLeft, LuBus, LuCircleCheck, LuCircleX, LuClipboardCheck, LuClock, LuMail, LuMap, LuMessageSquareText, LuPhone, LuPlay, LuSquare, LuTriangleAlert, LuUsers } from 'react-icons/lu';
+import { CheckIcon, CarIcon } from '../components/ui/icons.js';
+import { confirmAction } from '../utils/confirmStore.js';
+import { notify } from '../utils/notifyStore.js';
 import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaUsers, FaCheckCircle, FaTimesCircle, FaPhone, FaMapMarkedAlt, FaClock, FaExclamationTriangle, FaPlay, FaStop, FaSms, FaEnvelope, FaBus, FaClipboardCheck } from 'react-icons/fa';
+import { buildSeatRows, toSeatPayload } from './departureState';
+
 
 const DepartureDetailPage = ({ departure, onBack }) => {
   const [activeTab, setActiveTab] = useState('passengers');
@@ -17,66 +22,41 @@ const DepartureDetailPage = ({ departure, onBack }) => {
   const [incidents, setIncidents] = useState([]);
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [seatMap, setSeatMap] = useState([]);
-  // Fetch seat map from backend
-  useEffect(() => {
-    if (departure && departure._id) {
-      fetch(`/api/group-departure/${departure._id}/seat-map`)
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data.seatMap)) {
-            // Transform flat seatMap to 2D array for rendering
-            const seatsPerRow = 4;
-            const rows = [];
-            for (let i = 0; i < data.seatMap.length; i += seatsPerRow) {
-              rows.push(data.seatMap.slice(i, i + seatsPerRow));
-            }
-            setSeatMap(rows);
-          } else {
-            setSeatMap([]);
-          }
-        })
-        .catch(() => setSeatMap([]));
-    }
-  }, [departure]);
+  const [savedSeats, setSavedSeats] = useState(departure.seatMap || []);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchPassengers();
-    // initialize safety checklist / itinerary / tourStarted from departure payload if present
-    if (departure) {
-      if (departure.itinerary && Array.isArray(departure.itinerary) && departure.itinerary.length > 0) {
-        setItinerary(departure.itinerary);
-      } else {
-        fetchItinerary();
-      }
-      if (departure.safetyChecklist) {
-        setSafetyChecklist({ ...safetyChecklist, ...departure.safetyChecklist });
-      }
-      if (typeof departure.tourStarted === 'boolean') setTourStarted(departure.tourStarted);
-    } else {
-      fetchItinerary();
-    }
-    initializeSeatMap();
+    setItinerary(departure.itinerary || []);
+    setSafetyChecklist(departure.safetyChecklist || { firstAid: false, vehicleDocs: false, foodHygiene: false, emergencyContacts: false, routePlanned: false });
+    setTourStarted(Boolean(departure.tourStarted));
+    fetch(`/api/group-departure/${departure._id}/seat-map`)
+      .then(async res => { const data = await res.json(); if (!res.ok || !data.success) throw new Error(data.message || 'Unable to load seat map.'); return data; })
+      .then(data => setSavedSeats(data.seatMap || []))
+      .catch(error => setSaveError(error.message));
   }, [departure]);
 
-  // Helper to persist departure updates
   const saveDepartureUpdates = async (payload = {}) => {
-    if (!departure || !departure._id) return;
+    setSaveError('');
+    setSaving(true);
     try {
       const res = await fetch(`/api/admin/group-departures/${departure._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
-      if (!res.ok) {
-        const txt = await res.text();
-        console.error('Failed to save departure updates', txt);
-      } else {
-        // Optionally update local departure object if needed
-        const json = await res.json();
-        // console.log('Saved departure update:', json);
-      }
-    } catch (err) {
-      console.error('Error saving departure updates', err);
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.departure) throw new Error(data.message || 'Unable to save departure updates.');
+      const saved = data.departure;
+      setItinerary(saved.itinerary || []);
+      setSafetyChecklist(saved.safetyChecklist || {});
+      setTourStarted(Boolean(saved.tourStarted));
+      setSavedSeats(saved.seatMap || []);
+      return saved;
+    } catch (error) {
+      setSaveError(error.message || 'Unable to save departure updates.');
+      return null;
+    } finally {
+      setSaving(false);
     }
   };
   const fetchPassengers = async () => {
@@ -153,6 +133,8 @@ const DepartureDetailPage = ({ departure, onBack }) => {
             id: `${booking._id}-${idx}`,
             name: traveler.fullName || traveler.name || `${traveler.firstName || ''} ${traveler.lastName || ''}`.trim() || 'Guest',
             bookingId,
+            bookingRecordId: booking._id,
+            customerId: booking.customerId?._id || booking.customerId,
             phone: traveler.phone || booking.customerPhone || booking.customerId?.phone || '',
             paymentStatus: paymentSuccess ? 'PAID' : (booking.status || 'PENDING'),
             seatNumber,
@@ -163,10 +145,6 @@ const DepartureDetailPage = ({ departure, onBack }) => {
 
       setPassengers(rows);
 
-      // Initialize check-in status (all false by default)
-      const checkinStatus = {};
-      rows.forEach(p => { checkinStatus[p.id] = false; });
-      setCheckedIn(checkinStatus);
     } catch (err) {
       // fallback: empty
       setPassengers([]);
@@ -174,139 +152,75 @@ const DepartureDetailPage = ({ departure, onBack }) => {
     }
   };
 
-  const fetchItinerary = () => {
-    // Mock itinerary data
-    const mockItinerary = [
-      {
-        day: 1,
-        stops: [
-          { time: '09:00 AM', name: 'Departure Point', location: 'Hotel Lobby', status: 'pending', notes: 'Check all passengers present' },
-          { time: '11:00 AM', name: 'Rest Stop', location: 'Highway Service Area', status: 'pending', notes: '30 min break' },
-          { time: '01:00 PM', name: 'Lunch', location: 'Restaurant Paradise', status: 'pending', notes: 'Pre-booked buffet' },
-          { time: '03:00 PM', name: 'Sightseeing', location: 'Historical Monument', status: 'pending', notes: 'Guided tour 90 mins' },
-          { time: '06:00 PM', name: 'Hotel Check-in', location: 'Grand Hotel', status: 'pending', notes: 'Room allocation ready' }
-        ]
-      }
-    ];
-    setItinerary(mockItinerary);
-  };
-
-  const initializeSeatMap = () => {
-    const totalSeats = departure.totalSeats || 40;
-    const rows = Math.ceil(totalSeats / 4);
-    const seats = [];
-    
-    for (let row = 0; row < rows; row++) {
-      const rowSeats = [];
-      for (let col = 0; col < 4; col++) {
-        const seatNum = row * 4 + col + 1;
-        if (seatNum <= totalSeats) {
-          const passenger = passengers.find(p => p.seatNumber === seatNum);
-          rowSeats.push({
-            number: seatNum,
-            status: seatNum > departure.bookedSeats ? 'free' : 
-                   passenger && checkedIn[passenger.id] ? 'booked-checked' : 'booked',
-            passenger: passenger
-          });
-        } else {
-          rowSeats.push(null);
-        }
-      }
-      seats.push(rowSeats);
-    }
-    setSeatMap(seats);
-  };
-
   useEffect(() => {
-    if (passengers.length > 0) {
-      initializeSeatMap();
-    }
-  }, [passengers, checkedIn]);
+    const rows = buildSeatRows(departure.totalSeats || 0, passengers, savedSeats, departure.bookedSeats || 0);
+    setSeatMap(rows);
+    const attendance = {};
+    rows.flat().forEach(seat => { if (seat.passenger) attendance[seat.passenger.id] = Boolean(seat.checkedIn); });
+    setCheckedIn(attendance);
+  }, [departure.totalSeats, departure.bookedSeats, passengers, savedSeats]);
 
-  const handleCheckIn = (passengerId) => {
-    setCheckedIn(prev => {
-      const next = { ...prev, [passengerId]: !prev[passengerId] };
-      // update seatMap entries to reflect checked state and persist
-      const flat = seatMap.flat().filter(Boolean).map(s => ({ ...s }));
-      const p = passengers.find(x => x.id === passengerId);
-      if (p) {
-        for (const seat of flat) {
-          if (Number(seat.number) === Number(p.seatNumber)) {
-            seat.status = next[passengerId] ? 'booked-checked' : 'booked';
-            seat.checkedIn = !!next[passengerId];
-          }
-        }
-        // send updated seatMap to server (flattened)
-        const seatMapPayload = flat.map(s => ({ seatNumber: s.number, status: s.status, checkedIn: s.checkedIn }));
-        saveDepartureUpdates({ seatMap: seatMapPayload, seatMapChecked: true });
-      }
-      return next;
-    });
+  const handleCheckIn = async passengerId => {
+    if (saving) return;
+    const rows = seatMap.map(row => row.map(seat => {
+      if (seat.passenger?.id !== passengerId) return seat;
+      const present = !checkedIn[passengerId];
+      return { ...seat, checkedIn: present, status: present ? 'booked-checked' : 'booked' };
+    }));
+    await saveDepartureUpdates({ seatMap: toSeatPayload(rows), seatMapChecked: true });
   };
 
-  const handleMarkAllPresent = () => {
-    if (window.confirm('Are you sure you want to mark all passengers as present?')) {
-      const allChecked = {};
-      passengers.forEach(p => { allChecked[p.id] = true; });
-      setCheckedIn(allChecked);
-      // Update seatMap
-      const flat = seatMap.flat().filter(Boolean).map(s => ({ ...s }));
-      const seatMapPayload = flat.map(s => ({ seatNumber: s.number, status: s.passenger ? 'booked-checked' : s.status, checkedIn: !!s.passenger }));
-      saveDepartureUpdates({ seatMap: seatMapPayload, seatMapChecked: true });
-    }
+  const handleMarkAllPresent = async () => {
+    if (saving || !(await confirmAction({ message: 'Are you sure you want to mark all passengers as present?' }))) return;
+    const rows = seatMap.map(row => row.map(seat => seat.passenger && seat.status !== 'blocked' ? { ...seat, checkedIn: true, status: 'booked-checked' } : seat));
+    await saveDepartureUpdates({ seatMap: toSeatPayload(rows), seatMapChecked: true });
   };
 
   const handleSendReminder = () => {
     const notCheckedIn = passengers.filter(p => !checkedIn[p.id]);
-    alert(`Sending reminder to ${notCheckedIn.length} passengers who haven't checked in.`);
+    notify.message(`Sending reminder to ${notCheckedIn.length} passengers who haven't checked in.`);
   };
 
   const handleStartTour = async () => {
     const allChecklistDone = Object.values(safetyChecklist).every(v => v);
     if (!allChecklistDone) {
-      alert('Complete mandatory safety checks before starting the tour!');
+      notify.message('Complete mandatory safety checks before starting the tour!');
       setActiveTab('checklist');
       return;
     }
 
-    if (window.confirm('Mark tour as started?')) {
-      setTourStarted(true);
-      await saveDepartureUpdates({ safetyChecklist, tourStarted: true });
-      alert('Tour started successfully!');
+    if (await confirmAction({ message: 'Mark tour as started?' })) {
+      if (saving) return;
+      const saved = await saveDepartureUpdates({ safetyChecklist, tourStarted: true });
+      if (saved) notify.message('Tour started successfully!');
     }
   };
 
   const handleCompleteTour = async () => {
-    if (window.confirm('Mark tour as completed?')) {
+    if (await confirmAction({ message: 'Mark tour as completed?' })) {
       // mark tourStarted false and set status to CLOSED
-      setTourStarted(false);
-      await saveDepartureUpdates({ tourStarted: false, status: 'CLOSED' });
-      alert('Tour completed successfully!');
-      onBack();
+      if (saving) return;
+      const saved = await saveDepartureUpdates({ tourStarted: false, status: 'CLOSED' });
+      if (saved) { notify.message('Tour completed successfully!'); onBack(); }
     }
   };
 
-  const handleStopAction = (stopIndex, dayIndex) => {
-    const newItinerary = [...itinerary];
-    const currentStatus = newItinerary[dayIndex].stops[stopIndex].status;
-    newItinerary[dayIndex].stops[stopIndex].status = currentStatus === 'completed' ? 'pending' : 'completed';
-    setItinerary(newItinerary);
-    // persist
-    saveDepartureUpdates({ itinerary: newItinerary });
+  const handleStopAction = async (stopIndex, dayIndex) => {
+    if (saving) return;
+    const next = itinerary.map((day, index) => index !== dayIndex ? day : { ...day,
+      stops: day.stops.map((stop, index) => index !== stopIndex ? stop : { ...stop, status: stop.status === 'completed' ? 'pending' : 'completed' }) });
+    await saveDepartureUpdates({ itinerary: next });
   };
 
-  const handleToggleChecklist = (key) => {
-    setSafetyChecklist(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      saveDepartureUpdates({ safetyChecklist: next });
-      return next;
-    });
+  const handleToggleChecklist = async key => {
+    if (saving) return;
+    await saveDepartureUpdates({ safetyChecklist: { ...safetyChecklist, [key]: !safetyChecklist[key] } });
   };
 
   const handleDelayStop = (stopIndex, dayIndex) => {
     const reason = prompt('Enter reason for delay:');
     if (reason) {
-      alert(`Delay recorded. Notification sent to travelers about: ${reason}`);
+      notify.message(`Delay recorded. Notification sent to travelers about: ${reason}`);
     }
   };
 
@@ -329,13 +243,15 @@ const DepartureDetailPage = ({ departure, onBack }) => {
 
   return (
     <div className="space-y-6">
+      {saveError && <p role="alert" className="text-red-600">{saveError}</p>}
+      {saving && <p className="text-gray-500">Saving departure updates…</p>}
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <button 
           onClick={onBack}
           className="flex items-center text-orange-600 hover:text-orange-700 font-semibold mb-4"
         >
-          <FaArrowLeft className="mr-2" />
+          <LuArrowLeft aria-hidden="true" className="mr-2" />
           Back to Departures
         </button>
         
@@ -346,11 +262,11 @@ const DepartureDetailPage = ({ departure, onBack }) => {
             </h1>
             <div className="flex flex-wrap gap-4 text-gray-600 dark:text-gray-400">
               <span className="flex items-center">
-                <FaClock className="mr-2 text-orange-600" />
+                <LuClock aria-hidden="true" className="mr-2 text-orange-600" />
                 {new Date(departure.startDate).toLocaleString()} - {new Date(departure.endDate).toLocaleString()}
               </span>
               <span className="flex items-center">
-                <FaMapMarkedAlt className="mr-2 text-orange-600" />
+                <LuMap aria-hidden="true" className="mr-2 text-orange-600" />
                 Meeting Point: {departure.packageId?.destination || 'TBD'}
               </span>
             </div>
@@ -381,10 +297,10 @@ const DepartureDetailPage = ({ departure, onBack }) => {
         <div className="border-b border-gray-200 dark:border-gray-700">
           <div className="flex overflow-x-auto">
             {[
-              { id: 'passengers', label: 'Passenger List', icon: FaUsers },
-              { id: 'seats', label: 'Seat Map', icon: FaBus },
-              { id: 'itinerary', label: 'Itinerary', icon: FaMapMarkedAlt },
-              { id: 'checklist', label: 'Safety & Checklist', icon: FaClipboardCheck }
+              { id: 'passengers', label: 'Passenger List', icon: LuUsers },
+              { id: 'seats', label: 'Seat Map', icon: LuBus },
+              { id: 'itinerary', label: 'Itinerary', icon: LuMap },
+              { id: 'checklist', label: 'Safety & Checklist', icon: LuClipboardCheck }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -413,14 +329,14 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                     onClick={handleSendReminder}
                     className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
                   >
-                    <FaSms className="mr-2" />
+                    <LuMessageSquareText aria-hidden="true" className="mr-2" />
                     Send Reminder
                   </button>
                   <button 
                     onClick={handleMarkAllPresent}
                     className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold"
                   >
-                    <FaCheckCircle className="mr-2" />
+                    <LuCircleCheck aria-hidden="true" className="mr-2" />
                     Mark All Present
                   </button>
                 </div>
@@ -456,7 +372,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                         <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{passenger.bookingId}</td>
                         <td className="px-4 py-3">
                           <a href={`tel:${passenger.phone}`} className="flex items-center text-blue-600 hover:text-blue-700">
-                            <FaPhone className="mr-2 text-xs" />
+                            <LuPhone aria-hidden="true" className="mr-2 text-xs" />
                             {passenger.phone}
                           </a>
                         </td>
@@ -472,10 +388,10 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                         </td>
                         <td className="px-4 py-3">
                           {passenger.emergencyContact ? (
-                            <span className="text-green-600 text-sm">✓ Added</span>
+                            <span className="text-green-600 text-sm"><CheckIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /> Added</span>
                           ) : (
                             <span className="text-red-600 text-sm flex items-center">
-                              <FaExclamationTriangle className="mr-1" /> Missing
+                              <LuTriangleAlert aria-hidden="true" className="mr-1" /> Missing
                             </span>
                           )}
                         </td>
@@ -500,7 +416,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                       {/* Driver */}
                       <div className="mb-6 flex justify-end">
                         <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-                          🚗
+                          <CarIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" />
                         </div>
                       </div>
                       {/* Seats */}
@@ -512,7 +428,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                                 {seat ? (
                                   <div
                                     className={`w-14 h-14 rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition-all ${
-                                      seat.status === 'free' 
+                                      seat.status === 'blocked' ? 'bg-red-700 text-white' : seat.status === 'free'
                                         ? 'bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                                         : seat.status === 'booked-checked'
                                         ? 'bg-green-500 text-white'
@@ -584,11 +500,11 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                               <span className="font-bold text-orange-600 mr-4">{stop.time}</span>
                               <h4 className="font-bold text-gray-900 dark:text-white">{stop.name}</h4>
                               {stop.status === 'completed' && (
-                                <FaCheckCircle className="ml-2 text-green-600" />
+                                <LuCircleCheck aria-hidden="true" className="ml-2 text-green-600" />
                               )}
                             </div>
                             <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center mb-1">
-                              <FaMapMarkedAlt className="mr-2" />
+                              <LuMap aria-hidden="true" className="mr-2" />
                               {stop.location}
                             </p>
                             <p className="text-sm text-gray-500 dark:text-gray-500 italic">{stop.notes}</p>
@@ -643,7 +559,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-gray-900 dark:text-white">{label}</span>
                         <div className={badgeClass}>
-                          {checked ? <FaCheckCircle className="text-white" /> : <FaTimesCircle className="text-white" />}
+                          {checked ? <LuCircleCheck aria-hidden="true" className="text-white" /> : <LuCircleX aria-hidden="true" className="text-white" />}
                         </div>
                       </div>
                     </div>
@@ -748,7 +664,7 @@ const DepartureDetailPage = ({ departure, onBack }) => {
               onClick={handleStartTour}
               className="flex-1 flex items-center justify-center px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg transition-all transform hover:scale-105"
             >
-              <FaPlay className="mr-3" />
+              <LuPlay aria-hidden="true" className="mr-3" />
               Mark Tour as Started
             </button>
           ) : (
@@ -756,12 +672,12 @@ const DepartureDetailPage = ({ departure, onBack }) => {
               onClick={handleCompleteTour}
               className="flex-1 flex items-center justify-center px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-all transform hover:scale-105"
             >
-              <FaCheckCircle className="mr-3" />
+              <LuCircleCheck aria-hidden="true" className="mr-3" />
               Mark Tour as Completed
             </button>
           )}
           <button className="flex-1 flex items-center justify-center px-6 py-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-lg transition-all transform hover:scale-105">
-            <FaExclamationTriangle className="mr-3" />
+            <LuTriangleAlert aria-hidden="true" className="mr-3" />
             Request Emergency Help
           </button>
         </div>

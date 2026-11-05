@@ -1,6 +1,8 @@
+import { LuBook, LuBus, LuCalendarCheck, LuChartColumn, LuClipboardList, LuHouse, LuIdCard, LuLogOut, LuMessagesSquare, LuUser } from 'react-icons/lu';
+import { StarIcon, BusIcon } from './ui/icons.js';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaBus, FaClipboardList, FaChartBar, FaCalendarCheck, FaSignOutAlt, FaBook, FaComments, FaUser, FaHome, FaIdCard } from 'react-icons/fa';
+
 import OperatorHome from '../operator/OperatorHome';
 import MyDepartures from '../operator/MyDepartures';
 import MyBookings from '../operator/MyBookings';
@@ -31,12 +33,12 @@ const OperatorDashboard = () => {
   };
 
   const menuItems = [
-    { id: 'dashboard', icon: FaHome, label: 'Dashboard' },
-    { id: 'departures', icon: FaBus, label: 'My Departures' },
-    { id: 'bookings', icon: FaBook, label: 'My Bookings' },
-    { id: 'itineraries', icon: FaClipboardList, label: 'Checklists' },
-    { id: 'messages', icon: FaComments, label: 'Messages' },
-    { id: 'profile', icon: FaUser, label: 'Profile' }
+    { id: 'dashboard', icon: LuHouse, label: 'Dashboard' },
+    { id: 'departures', icon: LuBus, label: 'My Departures' },
+    { id: 'bookings', icon: LuBook, label: 'My Bookings' },
+    { id: 'itineraries', icon: LuClipboardList, label: 'Checklists' },
+    { id: 'messages', icon: LuMessagesSquare, label: 'Messages' },
+    { id: 'profile', icon: LuUser, label: 'Profile' }
   ];
 
   const renderContent = () => {
@@ -63,7 +65,7 @@ const OperatorDashboard = () => {
       {/* Sidebar */}
       <div className="fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-orange-600 to-orange-700 text-white p-6 shadow-2xl overflow-y-auto">
         <div className="flex items-center space-x-3 mb-8">
-          <FaBus className="text-3xl" />
+          <LuBus aria-hidden="true" className="text-3xl" />
           <h1 className="text-xl font-bold">Operator Hub</h1>
         </div>
         
@@ -72,7 +74,7 @@ const OperatorDashboard = () => {
             className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all bg-green-600 hover:bg-green-700 mb-4"
             onClick={() => navigate('/')}
           >
-            <FaChartBar />
+            <LuChartColumn aria-hidden="true" />
             <span className="font-semibold">Main Site</span>
           </button>
 
@@ -102,7 +104,7 @@ const OperatorDashboard = () => {
           }}
           className="absolute bottom-6 left-6 right-6 flex items-center justify-center space-x-2 px-4 py-3 bg-white/20 backdrop-blur-md rounded-xl hover:bg-white/30 transition-all"
         >
-          <FaSignOutAlt />
+          <LuLogOut aria-hidden="true" />
           <span>Logout</span>
         </button>
       </div>
@@ -120,7 +122,7 @@ const OperatorDashboard = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                  Welcome back, {firstName}! 🚌
+                  Welcome back, {firstName}! <BusIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" />
                 </h2>
               </div>
               <div className="flex items-center space-x-4">
@@ -142,7 +144,7 @@ const OperatorDashboard = () => {
                 {/* AdminChat removed from header per request */}
                 <div className="text-right">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Current Rating</p>
-                  <p className="text-3xl font-bold text-orange-600">4.9 ⭐</p>
+                  <p className="text-3xl font-bold text-orange-600">4.9 <StarIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /></p>
                 </div>
               </div>
             </div>
@@ -168,7 +170,7 @@ const OperatorDashboard = () => {
               />
               <div className="text-right">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Current Rating</p>
-                <p className="text-3xl font-bold text-orange-600">4.9 ⭐</p>
+                <p className="text-3xl font-bold text-orange-600">4.9 <StarIcon aria-hidden="true" className="inline h-4 w-4 align-[-2px]" /></p>
               </div>
             </div>
           </div>

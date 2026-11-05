@@ -1,7 +1,14 @@
+import { LuCircleCheck, LuClock, LuIdCard, LuLock, LuMail, LuPhone, LuSave, LuTriangleAlert, LuUser } from 'react-icons/lu';
+import { ChecklistIcon, StarIcon } from './ui/icons.js';
+import { confirmAction } from '../utils/confirmStore.js';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaUser, FaEnvelope, FaPhone, FaLock, FaSave, FaArrowLeft, FaIdCard, FaCheckCircle, FaClock, FaTimesCircle, FaExclamationTriangle } from 'react-icons/fa';
+import CustomerPageFrame from './customer/CustomerPageFrame.jsx';
+import Badge from './ui/Badge.jsx';
+import Button from './ui/Button.jsx';
+import FormField, { inputClass } from './ui/FormField.jsx';
+
 
 const CustomerProfile = () => {
   const navigate = useNavigate();
@@ -202,7 +209,7 @@ const CustomerProfile = () => {
     setError(null);
     // If currently approved, warn user that resubmitting will set status back to pending
     if (kycData && (kycData.status || '').toString().toLowerCase() === 'approved') {
-      const ok = window.confirm('Your KYC is already verified. Resubmitting will set status back to PENDING and require admin re-verification. Do you want to continue?');
+      const ok = await confirmAction({ message: 'Your KYC is already verified. Resubmitting will set status back to PENDING and require admin re-verification. Do you want to continue?' });
       if (!ok) {
         setKycLoading(false);
         return;
@@ -252,376 +259,265 @@ const CustomerProfile = () => {
 
   const getKYCStatusBadge = (status) => {
     const s = (status || '').toString().toUpperCase();
-    switch (s) {
-      case 'VERIFIED':
-      case 'APPROVED':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"><FaCheckCircle className="mr-1" /> Verified</span>;
-      case 'PENDING':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"><FaClock className="mr-1" /> Pending</span>;
-      case 'REJECTED':
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"><FaTimesCircle className="mr-1" /> Rejected</span>;
-      default:
-        return <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400">Not Submitted</span>;
-    }
+    if (s === 'VERIFIED' || s === 'APPROVED') return <Badge value="VERIFIED" />;
+    if (s === 'PENDING') return <Badge value="PENDING" />;
+    if (s === 'REJECTED') return <Badge value="REJECTED" />;
+    return <Badge tone="neutral">Not submitted</Badge>;
   };
 
   // Normalized status string for checks in the component (handles backend values like 'pending'/'approved')
   const kycStatus = kycData && kycData.status ? kycData.status.toString().toUpperCase() : null;
+  const kycVerified = kycStatus === 'VERIFIED' || kycStatus === 'APPROVED';
+
+  const tabs = [
+    { key: 'profile', label: 'Profile information', icon: LuUser },
+    { key: 'password', label: 'Change password', icon: LuLock },
+    { key: 'kyc', label: 'KYC verification', icon: LuIdCard },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <button
-            onClick={() => navigate('/customer')}
-            className="flex items-center text-gray-600 dark:text-gray-400 hover:text-primary mb-4"
-          >
-            <FaArrowLeft className="mr-2" />
-            Back to Dashboard
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Profile Settings</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage your account information and security</p>
+    <CustomerPageFrame
+      active="profile"
+      eyebrow="Account"
+      title="Profile settings"
+      description="Manage your account information, password and identity verification."
+    >
+      {message && (
+        <p role="status" className="rounded-xl border border-success/40 bg-success/10 p-4 text-sm text-text">{message}</p>
+      )}
+      {error && (
+        <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-text">{error}</p>
+      )}
+
+      <section aria-label="Reward points" className="glass flex flex-col gap-2 rounded-2xl p-6 ring-1 ring-brand/30 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand">Reward points</p>
+          <p className="mt-1 flex items-center gap-2 font-display text-3xl font-bold text-text">
+            <StarIcon aria-hidden="true" className="h-6 w-6 text-brand" />
+            {Number(profileData.rewardPoints || 0).toLocaleString()} points
+          </p>
+        </div>
+        <p className="max-w-sm text-sm text-text-muted">1 point = 1 BDT. Points are shown for reference; they are not applied to bookings yet.</p>
+      </section>
+
+      <div className="glass overflow-hidden rounded-2xl">
+        <div role="tablist" aria-label="Profile sections" className="flex flex-wrap gap-1 border-b border-border p-2">
+          {tabs.map(({ key, label, icon: Icon }) => {
+            const selected = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`tab-${key}`}
+                aria-selected={selected}
+                aria-controls={`panel-${key}`}
+                onClick={() => setActiveTab(key)}
+                className={`flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors duration-150 ${
+                  selected ? 'bg-brand text-on-brand' : 'text-text-muted hover:bg-surface-muted hover:text-text'
+                }`}
+              >
+                <Icon aria-hidden="true" className="h-4 w-4" />
+                {label}
+                {key === 'kyc' && kycVerified && <LuCircleCheck aria-hidden="true" className="h-4 w-4 text-success" />}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Messages */}
-        {message && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-            <p className="text-green-600">{message}</p>
-          </div>
-        )}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-600">{error}</p>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setActiveTab('profile')}
-              className={`flex-1 py-4 px-6 font-semibold transition-colors ${
-                activeTab === 'profile'
-                  ? 'bg-primary text-white border-b-2 border-primary'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              <FaUser className="inline mr-2" />
-              Profile Information
-            </button>
-            <button
-              onClick={() => setActiveTab('password')}
-              className={`flex-1 py-4 px-6 font-semibold transition-colors ${
-                activeTab === 'password'
-                  ? 'bg-primary text-white border-b-2 border-primary'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              <FaLock className="inline mr-2" />
-              Change Password
-            </button>
-              <button
-              onClick={() => setActiveTab('kyc')}
-              className={`flex-1 py-4 px-6 font-semibold transition-colors relative ${
-                activeTab === 'kyc'
-                  ? 'bg-primary text-white border-b-2 border-primary'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              <FaIdCard className="inline mr-2" />
-              KYC Verification
-              {kycData && (kycStatus === 'VERIFIED' || kycStatus === 'APPROVED') && (
-                <FaCheckCircle className="absolute top-3 right-3 text-green-500" size={12} />
-              )}
-            </button>
-          </div>
-
-          {/* Reward Points Banner */}
-          <div className="bg-gradient-to-r from-yellow-400 to-orange-500 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white text-sm font-medium">Your Reward Points</p>
-                <p className="text-white text-3xl font-bold">⭐ {profileData.rewardPoints} Points</p>
-                <p className="text-yellow-100 text-xs mt-1">1 point = 1 BDT | Use up to 20% discount on bookings</p>
-              </div>
-              <div className="text-white text-right">
-                <p className="text-sm">Points Value</p>
-                <p className="text-2xl font-bold">৳{profileData.rewardPoints}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Profile Tab */}
+        <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} className="space-y-6 p-6">
           {activeTab === 'profile' && (
-            <form onSubmit={handleProfileUpdate} className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaUser className="inline mr-2" />
-                  Full Name
-                </label>
+            <form onSubmit={handleProfileUpdate} className="space-y-5">
+              <FormField id="profile-name" label="Full name" required>
                 <input
+                  id="profile-name"
                   type="text"
                   value={profileData.fullName}
                   onChange={(e) => setProfileData({ ...profileData, fullName: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                   required
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaEnvelope className="inline mr-2" />
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={profileData.email}
-                  disabled
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed"
-                />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Email cannot be changed</p>
-              </div>
+              <FormField id="profile-email" label="Email address" hint="Email cannot be changed.">
+                <input id="profile-email" type="email" value={profileData.email} disabled className={inputClass} aria-describedby="profile-email-hint" />
+              </FormField>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaPhone className="inline mr-2" />
-                  Phone Number
-                </label>
+              <FormField id="profile-phone" label="Phone number">
                 <input
+                  id="profile-phone"
                   type="tel"
                   value={profileData.phone}
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaUser className="inline mr-2" />
-                  Age
-                </label>
+              <FormField id="profile-age" label="Age">
                 <input
+                  id="profile-age"
                   type="number"
                   min="1"
                   max="120"
                   value={profileData.age}
                   onChange={(e) => setProfileData({ ...profileData, age: e.target.value })}
                   placeholder="Enter your age"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                 />
-              </div>
+              </FormField>
 
               <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <FaSave className="mr-2" />
-                  {loading ? 'Saving...' : 'Save Changes'}
-                </button>
+                <Button type="submit" icon={LuSave} loading={loading}>{loading ? 'Saving…' : 'Save changes'}</Button>
               </div>
             </form>
           )}
 
-          {/* Password Tab */}
           {activeTab === 'password' && (
-            <form onSubmit={handlePasswordChange} className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaLock className="inline mr-2" />
-                  Current Password
-                </label>
+            <form onSubmit={handlePasswordChange} className="space-y-5">
+              <FormField id="password-current" label="Current password" required>
                 <input
+                  id="password-current"
                   type="password"
+                  autoComplete="current-password"
                   value={passwordData.currentPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                   required
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaLock className="inline mr-2" />
-                  New Password
-                </label>
+              <FormField id="password-new" label="New password" hint="At least 6 characters." required>
                 <input
+                  id="password-new"
                   type="password"
+                  autoComplete="new-password"
                   value={passwordData.newPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                   required
                   minLength={6}
                 />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Minimum 6 characters</p>
-              </div>
+              </FormField>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <FaLock className="inline mr-2" />
-                  Confirm New Password
-                </label>
+              <FormField id="password-confirm" label="Confirm new password" required>
                 <input
+                  id="password-confirm"
                   type="password"
+                  autoComplete="new-password"
                   value={passwordData.confirmPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className={inputClass}
                   required
                 />
-              </div>
+              </FormField>
 
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                <p className="text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-2">
-                  <FaExclamationTriangle className="text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <span>You will be logged out after changing your password. Please log in again with your new password.</span>
-                </p>
+              <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
+                <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-warning" />
+                <p>You will be logged out after changing your password. Please log in again with your new password.</p>
               </div>
 
               <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <FaLock className="mr-2" />
-                  {loading ? 'Changing...' : 'Change Password'}
-                </button>
+                <Button type="submit" icon={LuLock} loading={loading}>{loading ? 'Changing…' : 'Change password'}</Button>
               </div>
             </form>
           )}
 
-          {/* KYC Tab */}
           {activeTab === 'kyc' && (
-            <div className="p-6 space-y-6">
-              {/* KYC Status */}
+            <div className="space-y-6">
               {kycData && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">KYC Status</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                        Submitted on: {new Date(kycData.createdAt).toLocaleDateString()}
+                <section aria-label="KYC status" className="rounded-xl border border-border bg-surface-muted p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 text-sm">
+                      <p className="font-semibold text-text">KYC status</p>
+                      <p className="mt-1 text-text-muted">
+                        Submitted on {kycData.createdAt ? new Date(kycData.createdAt).toLocaleDateString() : 'N/A'}
                       </p>
                       {kycStatus === 'REJECTED' && kycData.rejectionReason && (
-                        <p className="text-sm text-red-600 dark:text-red-400 mt-2">
-                          Rejection Reason: {kycData.rejectionReason}
-                        </p>
+                        <p className="mt-2 text-danger">Rejection reason: {kycData.rejectionReason}</p>
                       )}
                     </div>
                     <div>{getKYCStatusBadge(kycData.status)}</div>
                   </div>
-                  
-                  {(kycStatus === 'VERIFIED' || kycStatus === 'APPROVED') && (
-                    <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
-                      <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5 font-semibold">
-                        <FaCheckCircle className="text-green-600 flex-shrink-0" /> You can now book international tour packages!
-                      </p>
-                    </div>
+                  {kycVerified && (
+                    <p className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-sm font-semibold text-success">
+                      <LuCircleCheck aria-hidden="true" className="h-4 w-4 flex-none" /> You can now book international tour packages.
+                    </p>
                   )}
-                  
                   {kycStatus === 'PENDING' && (
-                    <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
-                      <p className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1.5 font-semibold">
-                        <FaClock className="text-yellow-600 flex-shrink-0 animate-pulse" /> Your KYC is under review. We'll notify you once verified.
-                      </p>
-                    </div>
+                    <p className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-sm font-semibold text-warning">
+                      <LuClock aria-hidden="true" className="h-4 w-4 flex-none" /> Your KYC is under review. We will notify you once it is verified.
+                    </p>
                   )}
-                </div>
+                </section>
               )}
 
-              {/* Info Banner */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">📋 Why KYC Verification?</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  KYC (Know Your Customer) verification is required for booking international tour packages. This ensures secure travel documentation and compliance with international travel regulations.
+              <section aria-labelledby="kyc-why" className="rounded-xl border border-brand/30 bg-brand/5 p-4">
+                <h3 id="kyc-why" className="flex items-center gap-2 font-semibold text-text"><ChecklistIcon aria-hidden="true" className="h-4 w-4 text-brand" /> Why KYC verification?</h3>
+                <p className="mt-2 text-sm text-text-muted">
+                  KYC (Know Your Customer) verification is required for booking international tour packages. It confirms your identity for travel documentation.
                 </p>
-              </div>
+              </section>
 
-              {/* KYC Form or Verified message */}
-              {(kycStatus === 'VERIFIED' || kycStatus === 'APPROVED') ? (
-                <div className="p-6">
-                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-green-800 dark:text-green-200 mb-2">KYC Verified</h3>
-                    <p className="text-sm text-green-700 dark:text-green-200">Your identity has been verified by an administrator.</p>
-                    {kycData && (kycData.verifiedBy || kycData.verifiedAt) && (
-                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                        {kycData.verifiedBy ? `Verified by: ${kycData.verifiedBy}` : null}
-                        {kycData.verifiedAt ? `${kycData.verifiedBy ? ' • ' : ''}On: ${new Date(kycData.verifiedAt).toLocaleString()}` : null}
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                    If you need to update your documents, contact support or create a request from your account.
-                  </div>
+              {kycVerified ? (
+                <div className="rounded-xl border border-success/40 bg-success/10 p-4">
+                  <p className="font-semibold text-text">KYC verified</p>
+                  <p className="mt-1 text-sm text-text-muted">Your identity has been verified by an administrator.</p>
+                  {kycData && (kycData.verifiedBy || kycData.verifiedAt) && (
+                    <p className="mt-2 text-sm text-text-muted">
+                      {kycData.verifiedBy ? `Verified by: ${kycData.verifiedBy}` : null}
+                      {kycData.verifiedAt ? `${kycData.verifiedBy ? ' • ' : ''}On: ${new Date(kycData.verifiedAt).toLocaleString()}` : null}
+                    </p>
+                  )}
+                  <p className="mt-3 text-sm text-text-muted">To update your documents, contact support.</p>
                 </div>
               ) : (!kycData || kycStatus === 'REJECTED') && (
-                <form onSubmit={handleKYCSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Document Type
-                      </label>
+                <form onSubmit={handleKYCSubmit} className="space-y-5">
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <FormField id="kyc-type" label="Document type" required>
                       <select
+                        id="kyc-type"
                         value={kycForm.documentType}
                         onChange={(e) => setKycForm({ ...kycForm, documentType: e.target.value })}
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        className={inputClass}
                         required
                       >
                         <option value="passport">Passport</option>
                         <option value="national_id">National ID</option>
-                        <option value="driving_license">Driving License</option>
+                        <option value="driving_license">Driving licence</option>
                       </select>
-                    </div>
+                    </FormField>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Document Number
-                      </label>
+                    <FormField id="kyc-number" label="Document number" required>
                       <input
+                        id="kyc-number"
                         type="text"
                         value={kycForm.documentNumber}
                         onChange={(e) => setKycForm({ ...kycForm, documentNumber: e.target.value })}
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
                         placeholder={kycForm.documentType === 'passport' ? 'e.g., BD1234567' : kycForm.documentType === 'national_id' ? 'e.g., 1234567890123' : 'e.g., DL123456'}
+                        className={inputClass}
                         required
                       />
-                    </div>
+                    </FormField>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Upload Document Image
-                    </label>
+                  <FormField id="kyc-file" label="Document image" hint="A clear photo of the document: JPG, PNG or PDF, up to 5 MB." required>
                     <input
+                      id="kyc-file"
                       type="file"
                       accept="image/*,.pdf"
                       onChange={(e) => setKycForm({ ...kycForm, documentPhoto: e.target.files[0] })}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-brand/15 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-brand`}
                       required
                     />
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Upload a clear photo of your selected document (JPG, PNG, or PDF - Max 5MB)
-                    </p>
-                  </div>
+                  </FormField>
 
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                    <p className="text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-2">
-                      <FaExclamationTriangle className="text-yellow-600 mt-0.5 flex-shrink-0" />
-                      <span>Please ensure all information matches your official documents. Incorrect information may delay verification.</span>
-                    </p>
+                  <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
+                    <LuTriangleAlert aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-warning" />
+                    <p>Make sure the details match your official documents. Incorrect information may delay verification.</p>
                   </div>
 
                   <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={kycLoading}
-                      className="flex items-center px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <FaIdCard className="mr-2" />
-                      {kycLoading ? 'Submitting...' : 'Submit KYC'}
-                    </button>
+                    <Button type="submit" icon={LuIdCard} loading={kycLoading}>{kycLoading ? 'Submitting…' : 'Submit KYC'}</Button>
                   </div>
                 </form>
               )}
@@ -629,7 +525,7 @@ const CustomerProfile = () => {
           )}
         </div>
       </div>
-    </div>
+    </CustomerPageFrame>
   );
 };
 

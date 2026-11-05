@@ -1,13 +1,13 @@
+import { LuBell, LuCalendar, LuCircleCheck, LuDollarSign, LuInfo, LuLock, LuLockOpen, LuPercent, LuSave, LuSettings, LuShield, LuTriangleAlert, LuUndo2, LuUser, LuUserCog } from 'react-icons/lu';
+import { confirmAction } from '../utils/confirmStore.js';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { 
-  FaCog, FaSave, FaUndo, FaExclamationTriangle, FaCheckCircle,
-  FaDollarSign, FaPercent, FaCalendar, FaUserShield, FaUserTie,
-  FaUser, FaLock, FaUnlock, FaInfoCircle, FaBell
-} from 'react-icons/fa';
+import { loadSystemSettings, saveSystemSettings } from '../api/settings';
+import { AdminPageHeader } from './admin/AdminPrimitives.jsx';
+
 
 const SystemSettings = () => {
   const [loading, setLoading] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState('cancellation'); // 'cancellation', 'commission', 'permissions'
@@ -91,19 +91,17 @@ const SystemSettings = () => {
 
   const fetchSettings = async () => {
     setLoading(true);
+    setSettingsLoaded(false);
+    setErrors({});
     try {
-      const response = await axios.get('/api/admin/settings').catch(() => ({ data: {} }));
-      if (response.data.cancellationRules) {
-        setCancellationRules(response.data.cancellationRules);
-      }
-      if (response.data.commissionRules) {
-        setCommissionRules(response.data.commissionRules);
-      }
-      if (response.data.permissions) {
-        setPermissions(response.data.permissions);
-      }
+      const settings = await loadSystemSettings();
+      if (settings.cancellationRules) setCancellationRules(settings.cancellationRules);
+      if (settings.commissionRules) setCommissionRules(settings.commissionRules);
+      if (settings.permissions) setPermissions(settings.permissions);
+      setSettingsLoaded(true);
     } catch (err) {
       console.error('Failed to fetch settings:', err);
+      setErrors({ general: 'Failed to load saved settings. Please reload before editing.' });
     }
     setLoading(false);
   };
@@ -181,6 +179,11 @@ const SystemSettings = () => {
   };
 
   const saveSettings = async () => {
+    setSaved(false);
+    if (!settingsLoaded) {
+      setErrors({ general: 'Load saved settings successfully before making changes.' });
+      return;
+    }
     // Validate based on active tab
     let validationErrors = {};
     if (activeTab === 'cancellation') {
@@ -198,14 +201,7 @@ const SystemSettings = () => {
     setLoading(true);
 
     try {
-      await axios.post('/api/admin/settings', {
-        cancellationRules,
-        commissionRules,
-        permissions
-      }).catch(() => {
-        // Mock success for demo
-        console.log('Settings saved (mock)');
-      });
+      await saveSystemSettings({ cancellationRules, commissionRules, permissions });
 
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -216,8 +212,8 @@ const SystemSettings = () => {
     setLoading(false);
   };
 
-  const resetToDefaults = () => {
-    if (confirm('Are you sure you want to reset to default settings? This cannot be undone.')) {
+  const resetToDefaults = async () => {
+    if (await confirmAction({ message: 'Are you sure you want to reset to default settings? This cannot be undone.', danger: true })) {
       fetchSettings();
       setErrors({});
     }
@@ -248,10 +244,10 @@ const SystemSettings = () => {
   const renderCancellationTab = () => (
     <div className="space-y-6">
       {/* Enable/Disable Toggle */}
-      <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-info/10 rounded-lg">
         <div>
-          <div className="font-semibold text-gray-900 dark:text-white">Enable Cancellation Rules</div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Allow customers to cancel bookings with refunds</div>
+          <div className="font-semibold text-text">Enable Cancellation Rules</div>
+          <div className="text-sm text-text-muted">Allow customers to cancel bookings with refunds</div>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">
           <input
@@ -260,21 +256,21 @@ const SystemSettings = () => {
             onChange={(e) => setCancellationRules({ ...cancellationRules, enabled: e.target.checked })}
             className="sr-only peer"
           />
-          <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+          <div className="w-14 h-7 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-surface after:border-border after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand"></div>
         </label>
       </div>
 
       {/* Cancellation Rules Table */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-          <FaCalendar className="mr-2 text-blue-600 dark:text-blue-400" />
+        <h3 className="text-lg font-semibold text-text mb-4 flex items-center">
+          <LuCalendar aria-hidden="true" className="mr-2 text-info" />
           Refund Tiers by Days Before Start
         </h3>
         <div className="space-y-3">
           {cancellationRules.rules.map((rule, index) => (
-            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-surface-muted rounded-lg">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text mb-2">
                   Days Before Start
                 </label>
                 <input
@@ -282,14 +278,14 @@ const SystemSettings = () => {
                   min="0"
                   value={rule.daysBeforeStart}
                   onChange={(e) => updateCancellationRule(index, 'daysBeforeStart', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
                 />
                 {errors[`days_${index}`] && (
-                  <p className="text-red-600 text-xs mt-1">{errors[`days_${index}`]}</p>
+                  <p className="text-danger text-xs mt-1">{errors[`days_${index}`]}</p>
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text mb-2">
                   Refund Percentage
                 </label>
                 <div className="relative">
@@ -299,23 +295,23 @@ const SystemSettings = () => {
                     max="100"
                     value={rule.refundPercentage}
                     onChange={(e) => updateCancellationRule(index, 'refundPercentage', e.target.value)}
-                    className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
                   />
-                  <FaPercent className="absolute right-3 top-3 text-gray-400" />
+                  <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
                 </div>
                 {errors[`rule_${index}`] && (
-                  <p className="text-red-600 text-xs mt-1">{errors[`rule_${index}`]}</p>
+                  <p className="text-danger text-xs mt-1">{errors[`rule_${index}`]}</p>
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text mb-2">
                   Description
                 </label>
                 <input
                   type="text"
                   value={rule.description}
                   onChange={(e) => updateCancellationRule(index, 'description', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
                 />
               </div>
             </div>
@@ -326,7 +322,7 @@ const SystemSettings = () => {
       {/* Additional Settings */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-text mb-2">
             Processing Fee (%)
           </label>
           <div className="relative">
@@ -337,18 +333,18 @@ const SystemSettings = () => {
               step="0.1"
               value={cancellationRules.processingFee}
               onChange={(e) => setCancellationRules({ ...cancellationRules, processingFee: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
             />
-            <FaPercent className="absolute right-3 top-3 text-gray-400" />
+            <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
           </div>
           {errors.processingFee && (
-            <p className="text-red-600 text-xs mt-1">{errors.processingFee}</p>
+            <p className="text-danger text-xs mt-1">{errors.processingFee}</p>
           )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Fee deducted from all refunds</p>
+          <p className="text-xs text-text-muted mt-1">Fee deducted from all refunds</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-text mb-2">
             Emergency Refund (%)
           </label>
           <div className="relative">
@@ -358,19 +354,19 @@ const SystemSettings = () => {
               max="100"
               value={cancellationRules.emergencyRefundPercentage}
               onChange={(e) => setCancellationRules({ ...cancellationRules, emergencyRefundPercentage: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
             />
-            <FaPercent className="absolute right-3 top-3 text-gray-400" />
+            <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
           </div>
           {errors.emergencyRefund && (
-            <p className="text-red-600 text-xs mt-1">{errors.emergencyRefund}</p>
+            <p className="text-danger text-xs mt-1">{errors.emergencyRefund}</p>
           )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Medical/emergency cases</p>
+          <p className="text-xs text-text-muted mt-1">Medical/emergency cases</p>
         </div>
 
         <div className="flex items-center">
           <div>
-            <div className="font-semibold text-gray-900 dark:text-white mb-2">Operator Cancelled</div>
+            <div className="font-semibold text-text mb-2">Operator Cancelled</div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
@@ -378,8 +374,8 @@ const SystemSettings = () => {
                 onChange={(e) => setCancellationRules({ ...cancellationRules, operatorCancelledFullRefund: e.target.checked })}
                 className="sr-only peer"
               />
-              <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-              <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">Full refund</span>
+              <div className="w-14 h-7 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-surface after:border-border after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand"></div>
+              <span className="ml-3 text-sm text-text-muted">Full refund</span>
             </label>
           </div>
         </div>
@@ -391,13 +387,13 @@ const SystemSettings = () => {
     <div className="space-y-6">
       {/* Default Commissions */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-          <FaDollarSign className="mr-2 text-green-600 dark:text-green-400" />
+        <h3 className="text-lg font-semibold text-text mb-4 flex items-center">
+          <LuDollarSign aria-hidden="true" className="mr-2 text-success" />
           Default Commission Rates
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text mb-2">
               Tour Operator Commission (%)
             </label>
             <div className="relative">
@@ -408,16 +404,16 @@ const SystemSettings = () => {
                 step="0.1"
                 value={commissionRules.defaultOperatorCommission}
                 onChange={(e) => setCommissionRules({ ...commissionRules, defaultOperatorCommission: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
               />
-              <FaPercent className="absolute right-3 top-3 text-gray-400" />
+              <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
             </div>
             {errors.operatorCommission && (
-              <p className="text-red-600 text-xs mt-1">{errors.operatorCommission}</p>
+              <p className="text-danger text-xs mt-1">{errors.operatorCommission}</p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text mb-2">
               Platform/Admin Commission (%)
             </label>
             <div className="relative">
@@ -428,23 +424,23 @@ const SystemSettings = () => {
                 step="0.1"
                 value={commissionRules.defaultAdminCommission}
                 onChange={(e) => setCommissionRules({ ...commissionRules, defaultAdminCommission: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
               />
-              <FaPercent className="absolute right-3 top-3 text-gray-400" />
+              <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
             </div>
             {errors.adminCommission && (
-              <p className="text-red-600 text-xs mt-1">{errors.adminCommission}</p>
+              <p className="text-danger text-xs mt-1">{errors.adminCommission}</p>
             )}
           </div>
         </div>
         {errors.totalCommission && (
-          <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start">
-            <FaExclamationTriangle className="text-red-600 dark:text-red-400 mt-0.5 mr-2" />
-            <p className="text-red-600 dark:text-red-400 text-sm">{errors.totalCommission}</p>
+          <div className="mt-3 p-3 bg-danger/10 border border-danger/30 rounded-lg flex items-start">
+            <LuTriangleAlert aria-hidden="true" className="text-danger mt-0.5 mr-2" />
+            <p className="text-danger text-sm">{errors.totalCommission}</p>
           </div>
         )}
-        <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-          <p className="text-sm text-blue-900 dark:text-blue-300">
+        <div className="mt-3 p-3 bg-info/10 rounded-lg">
+          <p className="text-sm text-info">
             <strong>Total Commission:</strong> {(parseFloat(commissionRules.defaultOperatorCommission) + parseFloat(commissionRules.defaultAdminCommission)).toFixed(1)}%
           </p>
         </div>
@@ -452,9 +448,9 @@ const SystemSettings = () => {
 
       {/* Early Bird Discount */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <FaBell className="mr-2 text-yellow-600 dark:text-yellow-400" />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold text-text flex items-center">
+            <LuBell aria-hidden="true" className="mr-2 text-warning" />
             Early Bird Discount
           </h3>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -464,13 +460,13 @@ const SystemSettings = () => {
               onChange={(e) => setCommissionRules({ ...commissionRules, earlyBirdDiscountEnabled: e.target.checked })}
               className="sr-only peer"
             />
-            <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            <div className="w-14 h-7 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-surface after:border-border after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand"></div>
           </label>
         </div>
         {commissionRules.earlyBirdDiscountEnabled && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text mb-2">
                 Days Before Departure
               </label>
               <input
@@ -478,14 +474,14 @@ const SystemSettings = () => {
                 min="0"
                 value={commissionRules.earlyBirdDays}
                 onChange={(e) => setCommissionRules({ ...commissionRules, earlyBirdDays: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
               />
               {errors.earlyBirdDays && (
-                <p className="text-red-600 text-xs mt-1">{errors.earlyBirdDays}</p>
+                <p className="text-danger text-xs mt-1">{errors.earlyBirdDays}</p>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text mb-2">
                 Discount Percentage
               </label>
               <div className="relative">
@@ -496,12 +492,12 @@ const SystemSettings = () => {
                   step="0.1"
                   value={commissionRules.earlyBirdPercentage}
                   onChange={(e) => setCommissionRules({ ...commissionRules, earlyBirdPercentage: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
                 />
-                <FaPercent className="absolute right-3 top-3 text-gray-400" />
+                <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
               </div>
               {errors.earlyBirdPercentage && (
-                <p className="text-red-600 text-xs mt-1">{errors.earlyBirdPercentage}</p>
+                <p className="text-danger text-xs mt-1">{errors.earlyBirdPercentage}</p>
               )}
             </div>
           </div>
@@ -510,9 +506,9 @@ const SystemSettings = () => {
 
       {/* Group Discounts */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <FaUserTie className="mr-2 text-purple-600 dark:text-purple-400" />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold text-text flex items-center">
+            <LuUserCog aria-hidden="true" className="mr-2 text-info" />
             Group Booking Discounts
           </h3>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -522,15 +518,15 @@ const SystemSettings = () => {
               onChange={(e) => setCommissionRules({ ...commissionRules, groupDiscountEnabled: e.target.checked })}
               className="sr-only peer"
             />
-            <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            <div className="w-14 h-7 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-surface after:border-border after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand"></div>
           </label>
         </div>
         {commissionRules.groupDiscountEnabled && (
           <div className="space-y-3">
             {commissionRules.groupDiscountRules.map((rule, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-surface-muted rounded-lg">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text mb-2">
                     Minimum People
                   </label>
                   <input
@@ -538,14 +534,14 @@ const SystemSettings = () => {
                     min="1"
                     value={rule.minPeople}
                     onChange={(e) => updateGroupDiscountRule(index, 'minPeople', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
                   />
                   {errors[`groupPeople_${index}`] && (
-                    <p className="text-red-600 text-xs mt-1">{errors[`groupPeople_${index}`]}</p>
+                    <p className="text-danger text-xs mt-1">{errors[`groupPeople_${index}`]}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text mb-2">
                     Discount Percentage
                   </label>
                   <div className="relative">
@@ -556,12 +552,12 @@ const SystemSettings = () => {
                       step="0.1"
                       value={rule.discountPercentage}
                       onChange={(e) => updateGroupDiscountRule(index, 'discountPercentage', e.target.value)}
-                      className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 pr-8 border border-border rounded-lg bg-surface text-text"
                     />
-                    <FaPercent className="absolute right-3 top-3 text-gray-400" />
+                    <LuPercent aria-hidden="true" className="absolute right-3 top-3 text-text-muted" />
                   </div>
                   {errors[`groupDiscount_${index}`] && (
-                    <p className="text-red-600 text-xs mt-1">{errors[`groupDiscount_${index}`]}</p>
+                    <p className="text-danger text-xs mt-1">{errors[`groupDiscount_${index}`]}</p>
                   )}
                 </div>
               </div>
@@ -572,9 +568,9 @@ const SystemSettings = () => {
 
       {/* Seasonal Pricing */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <FaCalendar className="mr-2 text-orange-600 dark:text-orange-400" />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold text-text flex items-center">
+            <LuCalendar aria-hidden="true" className="mr-2 text-warning" />
             Seasonal Pricing
           </h3>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -584,13 +580,13 @@ const SystemSettings = () => {
               onChange={(e) => setCommissionRules({ ...commissionRules, seasonalPricingEnabled: e.target.checked })}
               className="sr-only peer"
             />
-            <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            <div className="w-14 h-7 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-surface after:border-border after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand"></div>
           </label>
         </div>
         {commissionRules.seasonalPricingEnabled && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text mb-2">
                 Peak Season Multiplier
               </label>
               <input
@@ -600,15 +596,15 @@ const SystemSettings = () => {
                 step="0.1"
                 value={commissionRules.peakSeasonMultiplier}
                 onChange={(e) => setCommissionRules({ ...commissionRules, peakSeasonMultiplier: parseFloat(e.target.value) || 1 })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
               />
               {errors.peakMultiplier && (
-                <p className="text-red-600 text-xs mt-1">{errors.peakMultiplier}</p>
+                <p className="text-danger text-xs mt-1">{errors.peakMultiplier}</p>
               )}
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price × {commissionRules.peakSeasonMultiplier}</p>
+              <p className="text-xs text-text-muted mt-1">Price × {commissionRules.peakSeasonMultiplier}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text mb-2">
                 Off-Season Multiplier
               </label>
               <input
@@ -618,12 +614,12 @@ const SystemSettings = () => {
                 step="0.1"
                 value={commissionRules.offSeasonMultiplier}
                 onChange={(e) => setCommissionRules({ ...commissionRules, offSeasonMultiplier: parseFloat(e.target.value) || 0.8 })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-text"
               />
               {errors.offMultiplier && (
-                <p className="text-red-600 text-xs mt-1">{errors.offMultiplier}</p>
+                <p className="text-danger text-xs mt-1">{errors.offMultiplier}</p>
               )}
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price × {commissionRules.offSeasonMultiplier}</p>
+              <p className="text-xs text-text-muted mt-1">Price × {commissionRules.offSeasonMultiplier}</p>
             </div>
           </div>
         )}
@@ -633,14 +629,14 @@ const SystemSettings = () => {
 
   const renderPermissionsTab = () => (
     <div className="space-y-6">
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+      <div className="bg-info/10 border border-info/30 rounded-lg p-4 mb-6">
         <div className="flex items-start">
-          <FaInfoCircle className="text-blue-600 dark:text-blue-400 mt-0.5 mr-3" />
+          <LuInfo aria-hidden="true" className="text-info mt-0.5 mr-3" />
           <div>
-            <div className="font-semibold text-blue-900 dark:text-blue-300 mb-1">
+            <div className="font-semibold text-info mb-1">
               Role & Permission Overview
             </div>
-            <div className="text-sm text-blue-700 dark:text-blue-400">
+            <div className="text-sm text-info">
               Define what actions each user role can perform. Changes take effect immediately for all users in that role.
             </div>
           </div>
@@ -648,26 +644,26 @@ const SystemSettings = () => {
       </div>
 
       {Object.keys(permissions).map(role => (
-        <div key={role} className="bg-white dark:bg-gray-700 rounded-xl p-6 border border-gray-200 dark:border-gray-600">
+        <div key={role} className="bg-surface rounded-xl p-6 border border-border">
           <div className="flex items-center mb-4">
-            {role === 'ADMIN' && <FaUserShield className="text-2xl text-red-600 dark:text-red-400 mr-3" />}
-            {role === 'TOUR_OPERATOR' && <FaUserTie className="text-2xl text-orange-600 dark:text-orange-400 mr-3" />}
-            {role === 'CUSTOMER' && <FaUser className="text-2xl text-blue-600 dark:text-blue-400 mr-3" />}
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+            {role === 'ADMIN' && <LuShield aria-hidden="true" className="text-2xl text-danger mr-3" />}
+            {role === 'TOUR_OPERATOR' && <LuUserCog aria-hidden="true" className="text-2xl text-warning mr-3" />}
+            {role === 'CUSTOMER' && <LuUser aria-hidden="true" className="text-2xl text-info mr-3" />}
+            <h3 className="text-xl font-bold text-text">
               {role.replace('_', ' ')}
             </h3>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.keys(permissions[role]).map(permission => (
-              <div key={permission} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div key={permission} className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-muted rounded-lg">
                 <div className="flex items-center">
                   {permissions[role][permission] ? (
-                    <FaCheckCircle className="text-green-600 dark:text-green-400 mr-3" />
+                    <LuCircleCheck aria-hidden="true" className="text-success mr-3" />
                   ) : (
-                    <FaLock className="text-red-600 dark:text-red-400 mr-3" />
+                    <LuLock aria-hidden="true" className="text-danger mr-3" />
                   )}
-                  <span className="text-sm text-gray-900 dark:text-white">
+                  <span className="text-sm text-text">
                     {permission.replace(/([A-Z])/g, ' $1').trim()}
                   </span>
                 </div>
@@ -679,7 +675,7 @@ const SystemSettings = () => {
                     disabled={role === 'ADMIN' && permission === 'canManageSettings'} // Admin always has settings access
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600 peer-disabled:opacity-50"></div>
+                  <div className="w-11 h-6 bg-surface-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-info rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand peer-disabled:opacity-50"></div>
                 </label>
               </div>
             ))}
@@ -690,43 +686,44 @@ const SystemSettings = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+    <div className="space-y-6">
+      <AdminPageHeader description="Cancellation rules, commission and discounts, and who can do what. Changes apply after you save." />
+      <div className="grid gap-6">
+        <section className="glass rounded-2xl">
           {/* Header */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                <FaCog className="mr-3 text-blue-600 dark:text-blue-400" />
+          <div className="p-6 border-b border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="text-2xl font-bold text-text flex items-center">
+                <LuSettings aria-hidden="true" className="mr-3 text-info" />
                 System Settings & Configuration
               </h2>
-              <div className="flex space-x-3">
+              <div className="flex flex-wrap gap-3">
                 <button
                   onClick={resetToDefaults}
-                  className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold flex items-center"
+                  className="px-4 py-2 bg-surface-muted text-text rounded-lg hover:bg-border transition-colors font-semibold flex items-center"
                 >
-                  <FaUndo className="mr-2" />
+                  <LuUndo2 aria-hidden="true" className="mr-2" />
                   Reset
                 </button>
                 <button
                   onClick={saveSettings}
-                  disabled={loading}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold flex items-center disabled:opacity-50"
+                  disabled={loading || !settingsLoaded}
+                  className="px-6 py-2 bg-brand text-white rounded-lg hover:opacity-90 transition-colors font-semibold flex items-center disabled:opacity-50"
                 >
-                  <FaSave className="mr-2" />
+                  <LuSave aria-hidden="true" className="mr-2" />
                   {loading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex space-x-4">
+            <div role="tablist" aria-label="Settings sections" className="glass flex flex-wrap gap-1 rounded-xl p-1">
               <button
                 onClick={() => setActiveTab('cancellation')}
                 className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
                   activeTab === 'cancellation'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    ? 'bg-brand text-white'
+                    : 'bg-surface-muted text-text'
                 }`}
               >
                 Cancellation Rules
@@ -735,8 +732,8 @@ const SystemSettings = () => {
                 onClick={() => setActiveTab('commission')}
                 className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
                   activeTab === 'commission'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    ? 'bg-brand text-white'
+                    : 'bg-surface-muted text-text'
                 }`}
               >
                 Commission & Discounts
@@ -745,8 +742,8 @@ const SystemSettings = () => {
                 onClick={() => setActiveTab('permissions')}
                 className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
                   activeTab === 'permissions'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    ? 'bg-brand text-white'
+                    : 'bg-surface-muted text-text'
                 }`}
               >
                 Role & Permissions
@@ -757,16 +754,19 @@ const SystemSettings = () => {
           {/* Content */}
           <div className="p-6">
             {saved && (
-              <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center">
-                <FaCheckCircle className="text-green-600 dark:text-green-400 mr-3" />
-                <p className="text-green-700 dark:text-green-400 font-semibold">Settings saved successfully!</p>
+              <div className="mb-6 p-4 bg-success/10 border border-success/30 rounded-lg flex items-center">
+                <LuCircleCheck aria-hidden="true" className="text-success mr-3" />
+                <p className="text-success font-semibold">Settings saved successfully!</p>
               </div>
             )}
 
             {errors.general && (
-              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start">
-                <FaExclamationTriangle className="text-red-600 dark:text-red-400 mt-0.5 mr-3" />
-                <p className="text-red-600 dark:text-red-400">{errors.general}</p>
+              <div className="mb-6 p-4 bg-danger/10 border border-danger/30 rounded-lg flex items-start">
+                <LuTriangleAlert aria-hidden="true" className="text-danger mt-0.5 mr-3" />
+                <div>
+                  <p className="text-danger">{errors.general}</p>
+                  {!settingsLoaded && <button type="button" onClick={fetchSettings} disabled={loading} className="mt-2 text-sm underline">Retry loading settings</button>}
+                </div>
               </div>
             )}
 
@@ -774,7 +774,7 @@ const SystemSettings = () => {
             {activeTab === 'commission' && renderCommissionTab()}
             {activeTab === 'permissions' && renderPermissionsTab()}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

@@ -41,6 +41,7 @@ coverage/
 *.swp
 *.agents
 *.specify
+*.claude
 specs
 
 # Uploads and temporary data
@@ -52,4 +53,4 @@ uploads/
 operator_profile_integration.md
 API_EXAMPLES.md
 test/
-scripts/
+/scripts/
