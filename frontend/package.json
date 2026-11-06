@@ -11,6 +11,7 @@
     "test:workflows": "node --test tests/*workflows.test.js"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.1.0",
     "axios": "^1.6.5",
     "react": "^18.2.0",

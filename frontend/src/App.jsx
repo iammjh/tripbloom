@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // The landing page is always dark: the dark token set is applied to <html> while it is mounted only.
@@ -125,6 +126,7 @@ function App() {
   return (
     <ErrorBoundary>
       <RouterProvider router={router} />
+      <Analytics />
       <SpeedInsights />
     </ErrorBoundary>
   );
