@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 // The landing page is always dark: the dark token set is applied to <html> while it is mounted only.
 const LandingTheme = ({ children }) => {
@@ -124,6 +125,7 @@ function App() {
   return (
     <ErrorBoundary>
       <RouterProvider router={router} />
+      <Analytics />
     </ErrorBoundary>
   );
 }
